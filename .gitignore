@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+echo ".env.local" >> .gitignore
+# .gitignore
+.env*.local
+node_modules/
