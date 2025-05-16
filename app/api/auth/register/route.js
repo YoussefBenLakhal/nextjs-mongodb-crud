@@ -1,60 +1,43 @@
-import { User } from '@/models/User';
-import { hash } from 'bcryptjs';
+import { NextResponse } from 'next/server';
+import { registerUser } from '@/lib/auth-utils';
 
 export async function POST(request) {
   try {
-    const { email, password, role } = await request.json();
-    
-    // Validate required fields
+    const { email, password } = await request.json();
+
+    // Basic validation
     if (!email || !password) {
-      return Response.json(
-        { error: 'Email and password are required' },
+      return NextResponse.json(
+        { error: "Email and password are required" },
         { status: 400 }
       );
     }
 
-    // Validate role
-    if (role && !['student', 'teacher'].includes(role)) {
-      return Response.json(
-        { error: 'Invalid role specified' },
+    // Validate password length
+    if (password.length < 8) {
+      return NextResponse.json(
+        { error: "Password must be at least 8 characters" },
         { status: 400 }
       );
     }
 
-    // Check existing user
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return Response.json(
-        { error: 'Email already registered' },
-        { status: 409 }
-      );
-    }
-
-    // Hash password and create user
+    // Create user in database
+    const userId = await registerUser(email, password);
     
-    const hashedPassword = await hash(password, 12);
-    if (!hashedPassword.startsWith('$2a$') && !hashedPassword.startsWith('$2b$')) {
-      console.error('Invalid hash generated:', hashedPassword);
-      throw new Error('Password hashing failed');
-    }
-    const result = await User.create({
-      email,
-      password: hashedPassword,
-      role: role || 'student', // Default to student if not specified
-      createdAt: new Date(),
-    });
-
-    return Response.json({ 
-      success: true,
-      userId: result.insertedId,
-      role: role || 'student'
-    });
+    return NextResponse.json(
+      { 
+        success: true,
+        userId,
+        message: "Registration successful" 
+      },
+      { status: 201 }
+    );
 
   } catch (error) {
     console.error('Registration error:', error);
-    return Response.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+    return NextResponse.json(
+      { error: error.message },
+      { status: error.message.includes('already exists') ? 409 : 500 }
     );
   }
 }

@@ -1,116 +1,80 @@
-'use client';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { signIn } from '@/lib/auth-service';
+import {
+  Box,
+  FormControl,
+  FormLabel,
+  Input,
+  Button,
+  Text,
+  Link,
+  Stack,
+  useToast,
+} from '@chakra-ui/react'
+import { useForm } from 'react-hook-form'
+import { loginUser } from '@/lib/client-auth'
 
 export default function LoginForm() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
+  const toast = useToast()
+  const { register, handleSubmit, formState: { errors } } = useForm()
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError('');
-
+  const onSubmit = async (data) => {
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Login failed');
-      }
-
-      router.push('/dashboard');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
+      await loginUser(data)
+      window.location.href = '/dashboard'
+    } catch (error) {
+      toast({
+        title: 'Login Failed',
+        description: error.message,
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      })
     }
-  };
+  }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-      {error && (
-        <div className="rounded-md bg-red-50 p-4">
-          <p className="text-sm text-red-700">{error}</p>
-        </div>
-      )}
+    <Box maxW="md" mx="auto" mt={12} p={6} boxShadow="xl" borderRadius="lg">
+      <Text fontSize="2xl" mb={6} fontWeight="bold" textAlign="center">
+        Welcome Back
+      </Text>
       
-      <div className="space-y-4">
-        <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-            Email address
-          </label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
-          />
-        </div>
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <Stack spacing={4}>
+          <FormControl isInvalid={errors.email}>
+            <FormLabel>Email</FormLabel>
+            <Input
+              type="email"
+              {...register('email', { required: 'Email is required' })}
+              focusBorderColor="brand.500"
+            />
+          </FormControl>
 
-        <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-            Password
-          </label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
-          />
-        </div>
-      </div>
+          <FormControl isInvalid={errors.password}>
+            <FormLabel>Password</FormLabel>
+            <Input
+              type="password"
+              {...register('password', { required: 'Password is required' })}
+              focusBorderColor="brand.500"
+            />
+          </FormControl>
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center">
-          <input
-            id="remember-me"
-            name="remember-me"
-            type="checkbox"
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-          />
-          <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
-            Remember me
-          </label>
-        </div>
+          <Button
+            type="submit"
+            colorScheme="brand"
+            size="lg"
+            width="full"
+            mt={4}
+          >
+            Sign In
+          </Button>
+        </Stack>
+      </form>
 
-        <div className="text-sm">
-          <a href="/forgot-password" className="font-medium text-blue-600 hover:text-blue-500">
-            Forgot your password?
-          </a>
-        </div>
-      </div>
-
-      <div>
-        <button
-          type="submit"
-          disabled={isLoading}
-          className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
-            isLoading ? 'opacity-75 cursor-not-allowed' : ''
-          }`}
-        >
-          {isLoading ? 'Signing in...' : 'Sign in'}
-        </button>
-      </div>
-    </form>
-  );
+      <Text mt={4} textAlign="center">
+        Don't have an account?{' '}
+        <Link href="/register" color="brand.500" fontWeight="semibold">
+          Create one
+        </Link>
+      </Text>
+    </Box>
+  )
 }

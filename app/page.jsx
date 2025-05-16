@@ -1,70 +1,75 @@
-// app/page.jsx
-import { getSession } from '@/lib/server-auth';
-import Link from 'next/link';
+"use client";
 
-export default async function HomePage() {
-  const session = await getSession();
-  const user = session?.user;
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { checkSession } from '@/lib/client-auth';
+
+export default function HomePage() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function checkUserSession() {
+      try {
+        const session = await checkSession();
+        console.log("HomePage - Session check result:", session);
+        
+        if (session) {
+          // User is logged in, redirect to dashboard
+          console.log("HomePage - User is logged in, redirecting to dashboard");
+          router.push('/dashboard');
+        } else {
+          // User is not logged in, they can stay on the home page
+          console.log("HomePage - User is not logged in");
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error("HomePage - Session verification error:", err);
+        setLoading(false);
+      }
+    }
+    
+    checkUserSession();
+  }, [router]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-2">Loading...</h2>
+          <p className="text-gray-500">Please wait...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <main className="min-h-screen p-8">
-      <nav className="flex justify-between items-center mb-12">
-        <h1 className="text-2xl font-bold">My App</h1>
-        <div className="flex gap-4">
-          {user ? (
-            <Link href="/logout" className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">
-              Logout
-            </Link>
-          ) : (
-            <>
-              <Link href="/login" className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-                Login
-              </Link>
-              <Link href="/register" className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">
-                Register
-              </Link>
-            </>
-          )}
+    <div className="container mx-auto p-4">
+      <h1 className="text-3xl font-bold mb-6">Welcome to Student Management System</h1>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white shadow-md rounded p-6">
+          <h2 className="text-xl font-semibold mb-4">Student Portal</h2>
+          <p className="mb-4">Access your grades, courses, and more.</p>
+          <button 
+            onClick={() => router.push('/login')}
+            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
+          >
+            Login
+          </button>
         </div>
-      </nav>
-
-      <div className="max-w-2xl mx-auto text-center">
-        {user ? (
-          <div className="space-y-4">
-            <h1 className="text-4xl font-bold mb-4">Welcome back, {user.email}</h1>
-            <p className="text-lg text-gray-600">
-              You're now signed in and can access all features!
-            </p>
-            <Link 
-              href="/dashboard" 
-              className="inline-block mt-6 px-6 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors"
-            >
-              Go to Dashboard
-            </Link>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <h1 className="text-4xl font-bold mb-4">Welcome to My App</h1>
-            <p className="text-lg text-gray-600">
-              Please sign in or create an account to get started
-            </p>
-            <div className="flex justify-center gap-4 mt-6">
-              <Link 
-                href="/login" 
-                className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-              >
-                Sign In
-              </Link>
-              <Link 
-                href="/register" 
-                className="px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
-              >
-                Create Account
-              </Link>
-            </div>
-          </div>
-        )}
+        
+        <div className="bg-white shadow-md rounded p-6">
+          <h2 className="text-xl font-semibold mb-4">Teacher Portal</h2>
+          <p className="mb-4">Manage students, submit grades, and more.</p>
+          <button 
+            onClick={() => router.push('/login')}
+            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
+          >
+            Login
+          </button>
+        </div>
       </div>
-    </main>
+    </div>
   );
 }

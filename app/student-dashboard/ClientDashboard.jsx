@@ -1,108 +1,86 @@
 'use client';
-import { clientLogout } from '@/lib/client-auth';
-import { useEffect, useState } from 'react';
 
-export default function ClientDashboard({ session }) {
-  const [grades, setGrades] = useState([]);
-  const [absences, setAbsences] = useState([]);
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import ClientDashboard from './ClientDashboard';
+import { Box, Spinner, Text, Center, Button, Alert, AlertIcon } from '@chakra-ui/react';
+import { checkSession } from '@/lib/client-auth';
+
+export default function StudentDashboardPage() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [sessionData, setSessionData] = useState(null);
+  const router = useRouter();
 
   useEffect(() => {
-    const fetchData = async () => {
+    async function verifyAccess() {
       try {
-        const [gradesRes, absencesRes] = await Promise.all([
-          fetch(`/api/grades?studentId=${session.id}`),
-          fetch(`/api/absences?studentId=${session.id}`)
-        ]);
-
-        if (!gradesRes.ok || !absencesRes.ok) throw new Error('Failed to fetch');
+        console.log('StudentDashboard - Verifying access');
+        const session = await checkSession();
         
-        const gradesData = await gradesRes.json();
-        const absencesData = await absencesRes.json();
-
-        setGrades(gradesData);
-        setAbsences(absencesData);
-      } catch (error) {
-        console.error('Fetch error:', error);
+        console.log('StudentDashboard - Session check result:', session);
+        
+        if (!session || !session.user) {
+          console.log('StudentDashboard - No valid session found');
+          setError('No valid session found. Please log in again.');
+          setLoading(false);
+          return;
+        }
+        
+        setSessionData(session);
+        
+        const role = session.user.role?.toLowerCase();
+        console.log('StudentDashboard - User role:', role);
+        
+        if (role !== 'student') {
+          console.log('StudentDashboard - User is not a student:', role);
+          setError('You do not have permission to access the student dashboard.');
+          setLoading(false);
+          return;
+        }
+        
+        setLoading(false);
+      } catch (err) {
+        console.error('StudentDashboard - Error verifying access:', err);
+        setError(err.message || 'Authentication failed');
+        setLoading(false);
       }
-    };
+    }
+    
+    verifyAccess();
+  }, [router]);
 
-    fetchData();
-  }, [session.id]);
+  const handleReturnToLogin = () => {
+    router.push('/login');
+  };
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
-            <div className="flex-shrink-0 flex items-center">
-              <span className="text-xl font-bold text-blue-600">EduPlatform</span>
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-gray-600">{session.email}</span>
-              <button
-                onClick={clientLogout}
-                className="text-gray-600 hover:text-blue-600 transition-colors"
-              >
-                Déconnexion
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
+  if (loading) {
+    return (
+      <Center h="100vh">
+        <Box textAlign="center">
+          <Spinner size="xl" color="blue.500" mb={4} />
+          <Text>Loading...</Text>
+        </Box>
+      </Center>
+    );
+  }
 
-      <main className="py-10">
-        <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h1 className="text-3xl font-bold text-gray-900 mb-8">Tableau de bord Étudiant</h1>
-            
-            <div className="space-y-8">
-              <section>
-                <h2 className="text-xl font-semibold mb-4">📚 Mes Notes</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {grades.map(grade => (
-                    <div key={grade._id} className="bg-blue-50 p-4 rounded-lg">
-                      <div className="flex justify-between items-center">
-                        <h3 className="font-medium">{grade.course}</h3>
-                        <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full">
-                          {grade.grade}/20
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-600 mt-2">
-                        {new Date(grade.date).toLocaleDateString('fr-FR')}
-                      </p>
-                    </div>
-                  ))}
-                  {grades.length === 0 && (
-                    <p className="text-gray-500">Aucune note disponible</p>
-                  )}
-                </div>
-              </section>
+  if (error) {
+    return (
+      <Center h="100vh">
+        <Box textAlign="center" maxW="md" p={6} borderWidth={1} borderRadius="lg" boxShadow="lg">
+          <Alert status="error" mb={4}>
+            <AlertIcon />
+            {error}
+          </Alert>
+          <Text mb={4}>Session data: {JSON.stringify(sessionData)}</Text>
+          <Button colorScheme="blue" onClick={handleReturnToLogin}>
+            Return to Login
+          </Button>
+        </Box>
+      </Center>
+    );
+  }
 
-              <section>
-                <h2 className="text-xl font-semibold mb-4">❌ Mes Absences</h2>
-                <div className="space-y-3">
-                  {absences.map(absence => (
-                    <div key={absence._id} className="bg-red-50 p-4 rounded-lg flex items-center justify-between">
-                      <div>
-                        <h3 className="font-medium">{absence.course}</h3>
-                        <p className="text-sm text-gray-600">
-                          {new Date(absence.date).toLocaleDateString('fr-FR')}
-                        </p>
-                      </div>
-                      <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm">
-                        Absence
-                      </span>
-                    </div>
-                  ))}
-                  {absences.length === 0 && (
-                    <p className="text-gray-500">Aucune absence enregistrée</p>
-                  )}
-                </div>
-              </section>
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
-  );
+  return <ClientDashboard />;
 }

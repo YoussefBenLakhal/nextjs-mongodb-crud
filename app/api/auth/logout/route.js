@@ -1,34 +1,27 @@
+// /app/logout/route.js
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(request) {
+export async function POST() {
   try {
-    // Get base URL from request headers
-    const host = request.headers.get('host');
-    const protocol = process.env.NODE_ENV === 'development' ? 'http://' : 'https://';
-    const baseUrl = `${protocol}${host}`;
-
-    // Create response with cookie invalidation
-    const response = NextResponse.redirect(new URL('/', baseUrl), {
-      status: 302,
+    const response = new NextResponse(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
     });
 
-    // Clear session cookie
-    response.cookies.set('session', '', {
+    response.cookies.set({
+      name: 'session',
+      value: '',
       path: '/',
       expires: new Date(0),
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
     });
 
     return response;
-
   } catch (error) {
-    console.error('Logout error:', error);
-    return NextResponse.json(
-      { error: 'Logout failed' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Logout failed' }, { status: 500 });
   }
 }

@@ -1,49 +1,39 @@
-import { getDB } from "@/lib/mongodb";
-import { getSession } from "@/lib/server-auth";
+import { NextResponse } from 'next/server';
+import { connectToDB } from '@/lib/mongodb';
+import { ObjectId } from 'mongodb';
 
-export async function POST(req) {
+export async function GET(request) {
   try {
-    const session = await getSession();
-    if (!session || session.role !== "teacher") {
-      return Response.json({ error: "Accès non autorisé" }, { status: 403 });
+    const { searchParams } = new URL(request.url);
+    const studentId = searchParams.get('studentId');
+
+    if (!studentId || !ObjectId.isValid(studentId)) {
+      return NextResponse.json(
+        { error: "Valid student ID required" },
+        { status: 400 }
+      );
     }
 
-    const { studentEmail, course, count } = await req.json();
+    const { db } = await connectToDB();
     
-    // Validation
-    if (!studentEmail || !course || count <= 0) {
-      return Response.json({ error: "Données invalides" }, { status: 400 });
-    }
-    
-    const db = await getDB();
-    
-    // Trouver l'étudiant
-    const student = await db.collection("users").findOne({ 
-      email: studentEmail.toLowerCase().trim(),
-      role: "student"
-    });
-    
-    if (!student) {
-      return Response.json({ error: "Étudiant introuvable" }, { status: 404 });
-    }
+    const absences = await db.collection('absences')
+      .find({ studentId: new ObjectId(studentId) })
+      .sort({ date: -1 })
+      .toArray();
 
-    // Générer les absences
-    const absences = Array.from({ length: count }, () => ({
-      studentId: student._id,
-      teacherId: session.id,
-      course,
-      date: new Date(),
-      status: "absent"
+    const transformed = absences.map(a => ({
+      ...a,
+      _id: a._id.toString(),
+      studentId: a.studentId.toString(),
+      date: a.date.toISOString()
     }));
 
-    const result = await db.collection("absences").insertMany(absences);
-
-    return Response.json({
-      success: true,
-      insertedCount: result.insertedCount
-    });
+    return NextResponse.json(transformed);
 
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch absences", details: error.message },
+      { status: 500 }
+    );
   }
 }

@@ -1,146 +1,286 @@
-'use client';
-import { clientLogout } from '@/lib/client-auth';
-import { useState } from 'react';
+// Path: C:\Users\Administrator\Desktop\BDD\nextjs-mongodb-crud\app\teacher-dashboard\ClientDashboard.jsx
 
-export default function ClientDashboard({ session }) {
+'use client';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { clientLogout } from '@/lib/client-auth';
+import { 
+  Box,
+  Flex,
+  Grid,
+  Heading,
+  Text,
+  Button,
+  useToast,
+  Spinner,
+  FormControl,
+  FormLabel,
+  Input,
+  Select,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  NumberIncrementStepper,
+  NumberDecrementStepper
+} from '@chakra-ui/react';
+
+export default function TeacherDashboard({ initialSession }) {
+  const router = useRouter();
+  const toast = useToast();
+  const [session, setSession] = useState(initialSession || null);
+  const [loading, setLoading] = useState(!initialSession);
+  const [loadingAction, setLoadingAction] = useState(false);
   const [formData, setFormData] = useState({
     studentEmail: '',
-    course: 'Mathématiques',
+    course: 'Math',
     grade: '',
-    absenceCount: 0
+    absences: 0
   });
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    try {
-      if (!formData.studentEmail) throw new Error("L'email étudiant est requis");
-      
-      let endpoint = '';
-      let body = {};
+  // Session verification
+  useEffect(() => {
+    if (initialSession) return;
 
-      if (formData.grade) {
-        endpoint = '/api/grades';
-        body = {
-          studentEmail: formData.studentEmail,
-          course: formData.course,
-          grade: parseFloat(formData.grade)
-        };
-      } else if (formData.absenceCount > 0) {
-        endpoint = '/api/absences';
-        body = {
-          studentEmail: formData.studentEmail,
-          course: formData.course,
-          count: formData.absenceCount
-        };
-      } else {
-        throw new Error("Remplissez soit la note soit le nombre d'absences");
+    const verifySession = async () => {
+      setLoading(true);
+      try {
+        const response = await fetch('/api/auth/session', {
+          credentials: 'include',
+          cache: 'no-store'
+        });
+
+        if (!response.ok) {
+          throw new Error(response.status === 401 ? 'Session expired' : 'Session verification failed');
+        }
+
+        const data = await response.json();
+        console.log('Session verification response:', data);
+        
+        if (!data?.user || data.user.role !== 'teacher') {
+          throw new Error('Teacher privileges required');
+        }
+
+        setSession(data.user);
+      } catch (error) {
+        console.error('Session verification error:', error);
+        toast({
+          title: 'Access Denied',
+          description: error.message,
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
+        router.push('/unauthorized');
+      } finally {
+        setLoading(false);
       }
+    };
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
+    verifySession();
+  }, [router, toast, initialSession]);
 
-      if (!response.ok) throw new Error(await response.text());
-
-      setFormData({ 
-        ...formData, 
-        grade: '', 
-        absenceCount: 0 
-      });
-      alert('Enregistrement réussi !');
-
+  const handleLogout = async () => {
+    try {
+      await clientLogout();
     } catch (error) {
-      alert(`Erreur: ${error.message}`);
+      toast({
+        title: 'Logout Failed',
+        description: error.message || 'Please try again',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
     }
   };
 
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoadingAction(true);
+    
+    try {
+      const endpoint = formData.grade ? '/api/grades' : '/api/absences';
+      console.log('Submitting to endpoint:', endpoint);
+      console.log('Form data:', formData);
+      
+      // Check if we have a session before submitting
+      const sessionCheckResponse = await fetch('/api/auth/session', {
+        credentials: 'include'
+      });
+      
+      const sessionData = await sessionCheckResponse.json();
+      console.log('Current session before submission:', sessionData);
+      
+      if (!sessionCheckResponse.ok) {
+        throw new Error('Session validation failed. Please log in again.');
+      }
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          studentEmail: formData.studentEmail,
+          course: formData.course,
+          ...(formData.grade && { grade: parseFloat(formData.grade) }),
+          ...(formData.absences > 0 && { count: formData.absences })
+        }),
+        credentials: 'include' // This is crucial - ensures cookies are sent
+      });
+
+      console.log('Response status:', response.status);
+      
+      const responseData = await response.json();
+      console.log('Response data:', responseData);
+      
+      if (!response.ok) {
+        throw new Error(responseData.error || 'Failed to submit record');
+      }
+      
+      toast({
+        title: 'Success',
+        description: 'Record submitted successfully',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+
+      setFormData({ 
+        studentEmail: '',
+        course: 'Math',
+        grade: '',
+        absences: 0
+      });
+
+    } catch (error) {
+      console.error('Submission error:', error);
+      toast({
+        title: 'Error',
+        description: error.message,
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setLoadingAction(false);
+    }
+  };
+
+  if (loading || !session) {
+    return (
+      <Flex minH="100vh" align="center" justify="center">
+        <Spinner size="xl" thickness="4px" />
+      </Flex>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
-            <div className="flex-shrink-0 flex items-center">
-              <span className="text-xl font-bold text-blue-600">EduPlatform</span>
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-gray-600">{session.email}</span>
-              <button
-                onClick={clientLogout}
-                className="text-gray-600 hover:text-blue-600 transition-colors"
+    <Box minH="100vh" bg="gray.50">
+      {/* Navigation Header */}
+      <Box bg="white" boxShadow="sm" py={4}>
+        <Flex maxW="7xl" mx="auto" px={6} justify="space-between" align="center">
+          <Heading size="lg" color="blue.600">Teacher Portal</Heading>
+          <Flex align="center" gap={4}>
+            <Text fontWeight="medium">{session.email}</Text>
+            <Button 
+              onClick={handleLogout} 
+              colorScheme="red" 
+              variant="outline"
+              size="sm"
+            >
+              Logout
+            </Button>
+          </Flex>
+        </Flex>
+      </Box>
+
+      {/* Main Content */}
+      <Box py={10} px={6} maxW="7xl" mx="auto">
+        <Box bg="white" p={8} borderRadius="lg" boxShadow="md">
+          <Heading size="xl" mb={8} color="blue.700">Grade & Attendance</Heading>
+          
+          <form onSubmit={handleSubmit}>
+            <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={6} mb={8}>
+              <FormControl>
+                <FormLabel>Student Email</FormLabel>
+                <Input
+                  type="email"
+                  value={formData.studentEmail}
+                  onChange={(e) => setFormData({...formData, studentEmail: e.target.value})}
+                  required
+                />
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Course</FormLabel>
+                <Select
+                  value={formData.course}
+                  onChange={(e) => setFormData({...formData, course: e.target.value})}
+                >
+                  <option value="Math">Mathematics</option>
+                  <option value="Science">Science</option>
+                  <option value="English">English</option>
+                  <option value="History">History</option>
+                </Select>
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Grade (0-100)</FormLabel>
+                <NumberInput 
+                  min={0} 
+                  max={100}
+                  value={formData.grade}
+                  onChange={(value) => setFormData({...formData, grade: value})}
+                >
+                  <NumberInputField />
+                  <NumberInputStepper>
+                    <NumberIncrementStepper />
+                    <NumberDecrementStepper />
+                  </NumberInputStepper>
+                </NumberInput>
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Absences</FormLabel>
+                <NumberInput
+                  min={0}
+                  value={formData.absences}
+                  onChange={(value) => setFormData({...formData, absences: value})}
+                >
+                  <NumberInputField />
+                  <NumberInputStepper>
+                    <NumberIncrementStepper />
+                    <NumberDecrementStepper />
+                  </NumberInputStepper>
+                </NumberInput>
+              </FormControl>
+            </Grid>
+
+            <Flex justify="flex-end" gap={4}>
+              <Button 
+                type="reset" 
+                variant="outline"
+                onClick={() => setFormData({
+                  studentEmail: '',
+                  course: 'Math',
+                  grade: '',
+                  absences: 0
+                })}
               >
-                Déconnexion
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      <main className="py-10">
-        <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h1 className="text-3xl font-bold text-gray-900 mb-8">Tableau de bord Enseignant</h1>
-            
-            <div className="bg-gray-50 p-6 rounded-lg">
-              <h2 className="text-xl font-semibold mb-6">➕ Ajouter une évaluation</h2>
-              
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <input
-                    type="email"
-                    placeholder="Email étudiant"
-                    className="p-2 border rounded focus:ring-2 focus:ring-blue-500"
-                    value={formData.studentEmail}
-                    onChange={e => setFormData({...formData, studentEmail: e.target.value})}
-                    required
-                  />
-
-                  <select
-                    className="p-2 border rounded focus:ring-2 focus:ring-blue-500"
-                    value={formData.course}
-                    onChange={e => setFormData({...formData, course: e.target.value})}
-                  >
-                    <option>Mathématiques</option>
-                    <option>Physique</option>
-                    <option>Informatique</option>
-                  </select>
-
-                  <input
-                    type="number"
-                    placeholder="Note (0-20)"
-                    className="p-2 border rounded focus:ring-2 focus:ring-blue-500"
-                    min="0"
-                    max="20"
-                    step="0.5"
-                    value={formData.grade}
-                    onChange={e => setFormData({...formData, grade: e.target.value})}
-                  />
-
-                  <input
-                    type="number"
-                    placeholder="Nombre d'absences"
-                    className="p-2 border rounded focus:ring-2 focus:ring-blue-500"
-                    min="0"
-                    value={formData.absenceCount}
-                    onChange={e => setFormData({...formData, absenceCount: Math.max(0, parseInt(e.target.value) || 0)})}
-                  />
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    Valider
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
+                Clear
+              </Button>
+              <Button 
+                type="submit" 
+                colorScheme="blue"
+                isLoading={loadingAction}
+                loadingText="Submitting..."
+              >
+                Submit Record
+              </Button>
+            </Flex>
+          </form>
+        </Box>
+      </Box>
+    </Box>
   );
 }

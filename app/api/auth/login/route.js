@@ -1,87 +1,50 @@
-// app/api/auth/login/route.js
-import { User } from '@/models/User';
-import { compare } from 'bcryptjs';
+import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { ObjectId } from 'mongodb';
-
-export const dynamic = 'force-dynamic';
+import jwt from 'jsonwebtoken';
+import { authenticateUser } from '@/lib/auth-utils';
 
 export async function POST(request) {
   try {
     const { email, password } = await request.json();
-    const cookieStore = cookies();
-
-    // Normalize email input
-    const normalizedEmail = email.toLowerCase().trim();
-    console.log('[LOGIN] Attempt for:', normalizedEmail);
-
-    // Basic validation
-    if (!normalizedEmail || !password) {
-      return Response.json(
-        { error: 'Email and password are required' },
-        { status: 400 }
-      );
-    }
-
-    // Find user
-    const user = await User.findOne({ email: normalizedEmail });
     
-    if (!user) {
-      console.log('[LOGIN] User not found:', normalizedEmail);
-      return Response.json(
-        { error: 'Invalid credentials' }, 
-        { status: 401 }
-      );
+    // Validate inputs
+    if (!email || !password) {
+      return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
     }
-
-    // Verify password hash format
-    if (!/^\$2[aby]\$/.test(user.password)) {
-      console.error('[LOGIN] Invalid password hash format');
-      return Response.json(
-        { error: 'Authentication system error' },
-        { status: 500 }
-      );
-    }
-
-    // Compare passwords
-    console.log('[LOGIN] Comparing passwords...');
-    const isValid = await compare(password, user.password);
-    console.log('[LOGIN] Password match:', isValid);
-
-    if (!isValid) {
-      return Response.json(
-        { error: 'Invalid credentials' },
-        { status: 401 }
-      );
-    }
-
-    // Create session data
-    const sessionData = {
-      id: user._id.toString(),
-      email: normalizedEmail,
-      role: user.role
-    };
-
-    // Set secure cookie
-    cookieStore.set('session', JSON.stringify(sessionData), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 60 * 60 * 24 * 7,
-      path: '/',
-    });
-
-    return Response.json({ 
-      success: true,
-      role: user.role,
-      email: normalizedEmail
-    });
-
-  } catch (error) {
-    console.error('[LOGIN] Server error:', error);
-    return Response.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+    
+    // Authenticate user
+    const user = await authenticateUser(email, password);
+    
+    // Create JWT token
+    const token = jwt.sign(
+      { 
+        id: user._id,
+        email: user.email,
+        role: user.role || 'student'
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
     );
+    
+    // Set cookie
+    cookies().set({
+      name: 'session',
+      value: token,
+      httpOnly: true,
+      path: '/',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60, // 7 days
+    });
+    
+    // Return user data (excluding password)
+    return NextResponse.json({
+      id: user._id,
+      email: user.email,
+      role: user.role,
+      token // Include token in response for client-side storage if needed
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    return NextResponse.json({ error: error.message || 'Login failed' }, { status: 401 });
   }
 }
