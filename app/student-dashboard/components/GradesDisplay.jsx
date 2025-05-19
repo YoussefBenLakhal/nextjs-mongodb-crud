@@ -37,6 +37,31 @@ const GradesDisplay = ({ subjects, grades: initialGrades, loading: externalLoadi
     }
   }, [initialGrades])
 
+  // Add this near the top of the component, after useState hooks
+  useEffect(() => {
+    if (subjects && subjects.length > 0) {
+      console.log(
+        "[GradesDisplay] Subjects:",
+        subjects.map((s) => ({
+          id: s._id,
+          name: s.name,
+        })),
+      )
+    }
+
+    if (grades && grades.length > 0) {
+      console.log(
+        "[GradesDisplay] Grades:",
+        grades.map((g) => ({
+          id: g._id,
+          subjectId: g.subjectId,
+          title: g.title,
+          score: g.score,
+        })),
+      )
+    }
+  }, [subjects, grades])
+
   // Fetch grades
   const fetchGrades = async () => {
     setLoading(true)
@@ -80,8 +105,24 @@ const GradesDisplay = ({ subjects, grades: initialGrades, loading: externalLoadi
   }
 
   // Calculate average grade for a subject
-  const calculateSubjectAverage = (subjectId) => {
-    const subjectGrades = grades.filter((g) => g.subjectId === subjectId)
+  function calculateSubjectAverage(subjectId) {
+    // Convert the subjectId to string for consistent comparison
+    const subjectIdStr = String(subjectId)
+
+    // Filter grades that match this subject, handling different ID formats
+    const subjectGrades = grades.filter((g) => {
+      // Convert grade's subjectId to string for comparison
+      const gradeSubjectId = String(g.subjectId)
+
+      // Check if IDs match directly or after removing any ObjectId wrapper
+      return (
+        gradeSubjectId === subjectIdStr ||
+        gradeSubjectId.replace(/^ObjectId$$['"](.+)['"]$$$/, "$1") === subjectIdStr ||
+        subjectIdStr.replace(/^ObjectId$$['"](.+)['"]$$$/, "$1") === gradeSubjectId
+      )
+    })
+
+    console.log(`[GradesDisplay] Subject ${subjectIdStr} has ${subjectGrades.length} grades`)
 
     if (subjectGrades.length === 0) return null
 

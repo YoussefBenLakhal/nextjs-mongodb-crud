@@ -55,7 +55,17 @@ export async function GET(request) {
     )
   } catch (error) {
     console.error("[API] Error fetching subjects:", error)
-    return NextResponse.json({ error: `Failed to fetch subjects: ${error.message}` }, { status: 500 })
+    return NextResponse.json(
+      { error: `Failed to fetch subjects: ${error.message}`, subjects: [] },
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      },
+    )
   }
 }
 

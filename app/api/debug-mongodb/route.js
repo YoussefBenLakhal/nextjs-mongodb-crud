@@ -1,75 +1,79 @@
 import { NextResponse } from "next/server"
-import { connectToDatabase, getConnectionStatus } from "../../lib/mongodb"
+import { connectToDatabase, getConnectionStatus } from "@/app/lib/mongodb"
 
-export async function GET(request) {
+export async function GET() {
+  console.log("[API] GET /api/debug-mongodb - Debugging MongoDB connection")
+
   try {
-    console.log("[API] GET /api/debug-mongodb - Debugging MongoDB connection")
-
-    // Get connection status
+    // Get the current connection status
     const connectionStatus = getConnectionStatus()
+    console.log("[API] Current connection status:", connectionStatus)
 
-    // Connect to database
+    // Try to connect to the database
     const { db, isConnected, error } = await connectToDatabase()
 
-    if (!isConnected || !db) {
+    if (!isConnected) {
+      console.error("[API] Database connection failed:", error)
       return NextResponse.json({
-        success: false,
-        isConnected: false,
-        error: error || "Failed to connect to database",
-        dbName: connectionStatus.dbName,
-        uri: connectionStatus.uri,
-        collections: [],
+        connected: false,
+        error: error || "Failed to connect to MongoDB",
+        timestamp: new Date().toISOString(),
+        connectionStatus,
       })
     }
 
-    // Get collections
-    const collections = await db.listCollections().toArray()
-    const collectionDetails = []
+    // Get database information
+    const databaseName = db.databaseName
 
-    // Get sample documents from each collection
-    for (const collection of collections) {
+    // Get collection names
+    let collections = []
+    try {
+      collections = await db.listCollections().toArray()
+      collections = collections.map((col) => col.name)
+    } catch (err) {
+      console.error("[API] Error listing collections:", err)
+    }
+
+    // Get sample documents from collections
+    const sampleDocuments = {}
+    if (collections.length > 0) {
       try {
-        const count = await db.collection(collection.name).countDocuments()
-        const sample = await db.collection(collection.name).findOne({})
-
-        // Convert ObjectIds to strings for JSON serialization
-        const serializedSample = sample
-          ? JSON.parse(
-              JSON.stringify(sample, (key, value) => {
-                if (key === "_id" || key.endsWith("Id")) {
-                  return value.toString()
-                }
-                return value
-              }),
-            )
-          : null
-
-        collectionDetails.push({
-          name: collection.name,
-          count,
-          sample: serializedSample,
-        })
+        // Get a sample document from each collection (limit to 5 collections)
+        const samplesToGet = collections.slice(0, 5)
+        for (const collection of samplesToGet) {
+          const doc = await db.collection(collection).findOne({})
+          if (doc) {
+            sampleDocuments[collection] = doc
+          }
+        }
       } catch (err) {
-        collectionDetails.push({
-          name: collection.name,
-          error: err.message,
-        })
+        console.error("[API] Error getting sample documents:", err)
       }
     }
 
+    // Get environment variables (redacted)
+    const envVars = {
+      MONGODB_URI: process.env.MONGODB_URI ? "Set (hidden for security)" : "Not set",
+      MONGODB_DB: process.env.MONGODB_DB || "Not set",
+      NODE_ENV: process.env.NODE_ENV || "Not set",
+    }
+
     return NextResponse.json({
-      success: true,
-      isConnected: true,
-      dbName: connectionStatus.dbName,
-      uri: connectionStatus.uri,
-      collections: collectionDetails,
+      connected: true,
       timestamp: new Date().toISOString(),
+      databaseName,
+      collections,
+      sampleDocuments,
+      connectionStatus,
+      environment: envVars,
     })
   } catch (error) {
-    console.error("[API] Debug MongoDB error:", error)
+    console.error("[API] MongoDB debug error:", error)
     return NextResponse.json({
-      success: false,
-      error: "Internal server error: " + error.message,
+      connected: false,
+      error: error.message || "An error occurred while debugging MongoDB connection",
+      timestamp: new Date().toISOString(),
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
     })
   }
 }

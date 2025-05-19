@@ -16,53 +16,11 @@ import {
   Button,
 } from "@chakra-ui/react"
 import { FaSync } from "react-icons/fa"
-import { useEffect } from "react"
 
 const SubjectsDisplay = ({ subjects, grades, loading }) => {
-  // Add this debugging code near the top of the component
-  useEffect(() => {
-    if (subjects && subjects.length > 0) {
-      console.log(
-        "[SubjectsDisplay] Subjects:",
-        subjects.map((s) => ({
-          id: s._id,
-          name: s.name,
-        })),
-      )
-    }
-
-    if (grades && grades.length > 0) {
-      console.log(
-        "[SubjectsDisplay] Grades:",
-        grades.map((g) => ({
-          id: g._id,
-          subjectId: g.subjectId,
-          title: g.title,
-        })),
-      )
-    }
-  }, [subjects, grades])
-
-  // Also modify the getSubjectGrades function to handle different ID formats
-  const getSubjectGrades = (subjectId) => {
-    // Convert the subjectId to string for consistent comparison
-    const subjectIdStr = String(subjectId)
-
-    return grades.filter((grade) => {
-      // Convert grade's subjectId to string for comparison
-      const gradeSubjectId = String(grade.subjectId)
-
-      // Check if IDs match directly or after removing any ObjectId wrapper
-      return (
-        gradeSubjectId === subjectIdStr ||
-        gradeSubjectId.replace(/^ObjectId$$['"](.+)['"]$$$/, "$1") === subjectIdStr ||
-        subjectIdStr.replace(/^ObjectId$$['"](.+)['"]$$$/, "$1") === gradeSubjectId
-      )
-    })
-  }
   // Calculate average grade for a subject
   const calculateSubjectAverage = (subjectId) => {
-    const subjectGrades = getSubjectGrades(subjectId)
+    const subjectGrades = grades.filter((g) => g.subjectId === subjectId)
 
     if (subjectGrades.length === 0) return null
 

@@ -6,6 +6,7 @@ import { getSession } from "../../../lib/server-auth"
 // Get all student assessments (with filtering options)
 export async function GET(request) {
   try {
+    console.log("[API] GET /api/student-assessments - Request received")
     console.log("[API] GET /api/student-assessments - Fetching assessments")
 
     // Get user from session
@@ -99,7 +100,27 @@ export async function GET(request) {
     // Then try the grades collection for backward compatibility
     try {
       const grades = await db.collection("grades").find(query).sort({ createdAt: -1 }).toArray()
+      console.log(`[API] Found ${grades.length} assessments for student ${userId}`)
+      if (grades.length > 0) {
+        console.log("[API] Sample assessment:", {
+          id: grades[0]._id.toString(),
+          subjectId: grades[0].subjectId.toString(),
+          title: grades[0].title,
+        })
+      }
       assessments = [...assessments, ...grades]
+
+      // Before returning the response, ensure all ObjectIds are properly converted to strings
+      const serializedGrades = grades.map((grade) => ({
+        ...grade,
+        _id: grade._id.toString(),
+        studentId: grade.studentId.toString(),
+        subjectId: grade.subjectId.toString(),
+        ...(grade.classId && { classId: grade.classId.toString() }),
+        ...(grade.createdBy && { createdBy: grade.createdBy.toString() }),
+      }))
+
+      console.log(`[API] Returning ${serializedGrades.length} serialized assessments`)
     } catch (error) {
       console.error("[API] Error fetching from grades collection:", error)
     }

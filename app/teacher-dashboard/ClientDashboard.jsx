@@ -30,6 +30,9 @@ import {
   MenuItem,
   Avatar,
   HStack,
+  Spinner,
+  Alert,
+  AlertIcon,
 } from "@chakra-ui/react"
 import {
   FaChalkboardTeacher,
@@ -56,9 +59,14 @@ export default function ClientDashboard({ user }) {
   const [loading, setLoading] = useState({
     classes: true,
     students: false,
-    subjects: false,
+    subjects: false, // Start with false to prevent immediate loading indicator
     connectionTest: false,
     logout: false,
+  })
+  const [errors, setErrors] = useState({
+    classes: null,
+    students: null,
+    subjects: null,
   })
   const [activeTab, setActiveTab] = useState(0)
   const router = useRouter()
@@ -66,6 +74,8 @@ export default function ClientDashboard({ user }) {
 
   // Use refs to prevent multiple fetches
   const subjectsFetchedRef = useRef(false)
+  const initialLoadCompletedRef = useRef(false)
+  const fetchTimeoutRef = useRef(null)
 
   const bgColor = useColorModeValue("white", "gray.800")
   const borderColor = useColorModeValue("gray.200", "gray.700")
@@ -169,6 +179,7 @@ export default function ClientDashboard({ user }) {
       try {
         console.log("[ClientDashboard] Fetching classes...")
         setLoading((prev) => ({ ...prev, classes: true }))
+        setErrors((prev) => ({ ...prev, classes: null }))
 
         const response = await fetch("/api/classes", {
           method: "GET",
@@ -185,6 +196,7 @@ export default function ClientDashboard({ user }) {
         setClasses(data.classes || [])
       } catch (error) {
         console.error("[ClientDashboard] Error fetching classes:", error)
+        setErrors((prev) => ({ ...prev, classes: error.message }))
         toast({
           title: "Error",
           description: "Failed to load classes. Please try again.",
@@ -221,78 +233,177 @@ export default function ClientDashboard({ user }) {
   // Fetch subjects when needed - memoized to prevent recreation on each render
   const fetchSubjects = useCallback(
     async (force = false) => {
+      // Clear any existing timeout
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current)
+        fetchTimeoutRef.current = null
+      }
+
       // Only fetch if we haven't fetched yet or if force is true
       if (subjectsFetchedRef.current && !force) {
         console.log("[ClientDashboard] Subjects already fetched, skipping fetch")
         return
       }
 
-      if (loading.subjects) {
+      if (loading.subjects && !force) {
         console.log("[ClientDashboard] Already fetching subjects, skipping fetch")
         return
       }
 
       console.log("[ClientDashboard] Fetching subjects...")
       setLoading((prev) => ({ ...prev, subjects: true }))
+      setErrors((prev) => ({ ...prev, subjects: null }))
+
+      // Set a timeout to prevent infinite loading
+      fetchTimeoutRef.current = setTimeout(() => {
+        console.log("[ClientDashboard] Subjects fetch timeout - resetting loading state")
+        setLoading((prev) => ({ ...prev, subjects: false }))
+        setErrors((prev) => ({ ...prev, subjects: "Request timed out. Please try again." }))
+
+        // Use fallback data
+        if (subjects.length === 0) {
+          setSubjects([
+            {
+              _id: "fallback1",
+              name: "Mathematics",
+              code: "MATH101",
+              description: "Introduction to algebra, geometry, and calculus",
+              classId: "fallback1",
+            },
+            {
+              _id: "fallback2",
+              name: "Science",
+              code: "SCI101",
+              description: "Basic principles of physics, chemistry, and biology",
+              classId: "fallback1",
+            },
+          ])
+        }
+      }, 10000) // 10 second timeout
 
       try {
-        const response = await fetch("/api/subjects", {
+        // Add cache-busting parameter
+        const timestamp = Date.now()
+        const response = await fetch(`/api/subjects?t=${timestamp}`, {
           method: "GET",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            Pragma: "no-cache",
+            Expires: "0",
+          },
           cache: "no-store",
         })
 
+        // Clear the timeout since we got a response
+        if (fetchTimeoutRef.current) {
+          clearTimeout(fetchTimeoutRef.current)
+          fetchTimeoutRef.current = null
+        }
+
         if (!response.ok) {
-          throw new Error("Failed to fetch subjects")
+          throw new Error(`Failed to fetch subjects: ${response.status} ${response.statusText}`)
         }
 
         const data = await response.json()
         console.log(`[ClientDashboard] Fetched ${data.subjects?.length || 0} subjects`)
-        setSubjects(data.subjects || [])
+
+        if (!data.subjects) {
+          throw new Error("No subjects data returned from API")
+        }
+
+        setSubjects(data.subjects)
 
         // Mark as fetched to prevent additional fetches
         subjectsFetchedRef.current = true
       } catch (error) {
         console.error("[ClientDashboard] Error fetching subjects:", error)
-        toast({
-          title: "Error",
-          description: "Failed to load subjects. Using fallback data.",
-          status: "error",
-          duration: 3000,
-          isClosable: true,
-        })
+        setErrors((prev) => ({ ...prev, subjects: error.message }))
 
-        // Use fallback data if fetch fails
-        setSubjects([
-          {
-            _id: "fallback1",
-            name: "Mathematics",
-            code: "MATH101",
-            description: "Introduction to algebra, geometry, and calculus",
-            classId: "fallback1",
-          },
-          {
-            _id: "fallback2",
-            name: "Science",
-            code: "SCI101",
-            description: "Basic principles of physics, chemistry, and biology",
-            classId: "fallback1",
-          },
-        ])
+        // Only show toast for user-initiated refreshes
+        if (force) {
+          toast({
+            title: "Error",
+            description: `Failed to load subjects: ${error.message}`,
+            status: "error",
+            duration: 5000,
+            isClosable: true,
+          })
+        }
+
+        // Use fallback data if fetch fails and we don't have any subjects
+        if (subjects.length === 0) {
+          setSubjects([
+            {
+              _id: "fallback1",
+              name: "Mathematics",
+              code: "MATH101",
+              description: "Introduction to algebra, geometry, and calculus",
+              classId: "fallback1",
+            },
+            {
+              _id: "fallback2",
+              name: "Science",
+              code: "SCI101",
+              description: "Basic principles of physics, chemistry, and biology",
+              classId: "fallback1",
+            },
+          ])
+        }
       } finally {
+        // Clear the timeout if it's still active
+        if (fetchTimeoutRef.current) {
+          clearTimeout(fetchTimeoutRef.current)
+          fetchTimeoutRef.current = null
+        }
+
         setLoading((prev) => ({ ...prev, subjects: false }))
       }
     },
-    [loading.subjects, toast],
+    [loading.subjects, toast, subjects],
   )
 
-  // Fetch subjects when the subjects tab is selected
+  // Manual refresh function for subjects
+  const handleRefreshSubjects = () => {
+    console.log("[ClientDashboard] Manually refreshing subjects")
+    subjectsFetchedRef.current = false // Reset the fetched flag
+    fetchSubjects(true) // Force refresh
+  }
+
+  // Fetch subjects on component mount with a slight delay
   useEffect(() => {
-    if (activeTab === 2 && !subjectsFetchedRef.current && !loading.subjects) {
-      console.log("[ClientDashboard] Subjects tab selected, fetching subjects...")
-      fetchSubjects()
+    // Only run this effect once on mount
+    if (!initialLoadCompletedRef.current) {
+      console.log("[ClientDashboard] Initial load - fetching subjects automatically")
+      // Add a small delay to ensure the component is fully mounted
+      const timer = setTimeout(() => {
+        fetchSubjects()
+      }, 500)
+
+      initialLoadCompletedRef.current = true
+
+      return () => clearTimeout(timer)
     }
-  }, [activeTab, loading.subjects, fetchSubjects])
+  }, [fetchSubjects])
+
+  // Also fetch subjects when the subjects tab is selected (as a backup)
+  useEffect(() => {
+    if (activeTab === 2 && !loading.subjects) {
+      console.log("[ClientDashboard] Subjects tab selected, checking if we need to fetch...")
+      if (!subjectsFetchedRef.current || subjects.length === 0) {
+        fetchSubjects()
+      }
+    }
+  }, [activeTab, loading.subjects, fetchSubjects, subjects])
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current)
+      }
+    }
+  }, [])
 
   // Handle tab change
   const handleTabChange = (index) => {
@@ -306,24 +417,32 @@ export default function ClientDashboard({ user }) {
       value: Array.isArray(classes) ? classes.length : 0,
       icon: FaChalkboardTeacher,
       color: "blue.500",
+      loading: loading.classes,
+      error: errors.classes,
     },
     {
       label: "Students",
       value: Array.isArray(classes) ? classes.reduce((acc, cls) => acc + (cls.students?.length || 0), 0) : 0,
       icon: FaUserGraduate,
       color: "green.500",
+      loading: loading.students,
+      error: errors.students,
     },
     {
       label: "Subjects",
       value: Array.isArray(subjects) ? subjects.length : 0,
       icon: FaBook,
       color: "purple.500",
+      loading: loading.subjects,
+      error: errors.subjects,
     },
     {
       label: "Today's Sessions",
       value: "N/A",
       icon: FaCalendarCheck,
       color: "orange.500",
+      loading: false,
+      error: null,
     },
   ]
 
@@ -362,16 +481,34 @@ export default function ClientDashboard({ user }) {
         {stats.map((stat, index) => (
           <Card key={index} bg={bgColor} borderWidth="1px" borderColor={borderColor} shadow="md">
             <CardBody>
-              <Flex align="center">
-                <Box p={3} bg={stat.color} borderRadius="full" color="white" mr={4}>
-                  <Icon as={stat.icon} boxSize={6} />
-                </Box>
-                <Stat>
-                  <StatLabel fontSize="sm">{stat.label}</StatLabel>
-                  <StatNumber fontSize="2xl">{stat.value}</StatNumber>
-                  <StatHelpText>Academic Year 2024-2025</StatHelpText>
-                </Stat>
+              <Flex align="center" justify="space-between">
+                <Flex align="center">
+                  <Box p={3} bg={stat.color} borderRadius="full" color="white" mr={4}>
+                    <Icon as={stat.icon} boxSize={6} />
+                  </Box>
+                  <Stat>
+                    <StatLabel fontSize="sm">{stat.label}</StatLabel>
+                    <StatNumber fontSize="2xl">
+                      {stat.loading ? (
+                        <Spinner size="sm" color={stat.color} mr={2} />
+                      ) : stat.error ? (
+                        <Text as="span" fontSize="md" color="red.500">
+                          Error
+                        </Text>
+                      ) : (
+                        stat.value
+                      )}
+                    </StatNumber>
+                    <StatHelpText>Academic Year 2024-2025</StatHelpText>
+                  </Stat>
+                </Flex>
               </Flex>
+              {stat.error && (
+                <Alert status="error" mt={2} size="sm" fontSize="xs">
+                  <AlertIcon />
+                  {stat.error}
+                </Alert>
+              )}
             </CardBody>
           </Card>
         ))}
@@ -380,7 +517,7 @@ export default function ClientDashboard({ user }) {
       {/* Main Content Tabs */}
       <Card bg={bgColor} borderWidth="1px" borderColor={borderColor} shadow="md">
         <CardHeader p={0}>
-          <Tabs colorScheme="blue" isLazy index={activeTab} onChange={handleTabChange}>
+          <Tabs colorScheme="blue" isLazy={false} index={activeTab} onChange={handleTabChange}>
             <TabList px={4}>
               <Tab>Classes</Tab>
               <Tab>Students</Tab>

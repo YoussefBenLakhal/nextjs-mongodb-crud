@@ -1,231 +1,211 @@
 import { NextResponse } from "next/server"
-import { connectToDatabase } from "../../../../lib/mongodb"
+import { connectToDatabase } from "../../../lib/mongodb1"
 import { ObjectId } from "mongodb"
-import { getSession } from "../../../../lib/server-auth"
+import { getServerSession } from "next-auth/next"
+import { authOptions } from "@/app/api/auth/[...nextauth]/route"
 
 // Get a specific class
 export async function GET(request, { params }) {
   try {
-    console.log("[API] GET /api/classes/[id] - Fetching class:", params.id)
+    console.log(`[API] GET /api/classes/${params.id} - Fetching class`)
 
-    // Get user from session
-    const user = await getSession()
+    // Connect to the database
+    const { db, isConnected, error } = await connectToDatabase()
 
-    if (!user) {
-      console.log("[API] No user in session")
-      return NextResponse.json({ error: "Unauthorized - No user in session" }, { status: 401 })
+    if (!isConnected) {
+      console.error("[API] Database connection failed:", error)
+      return NextResponse.json({ error: "Failed to connect to the database" }, { status: 500 })
     }
 
-    const userId = user.id
-    const userRole = user.role
-
-    const { id } = params
-    const { db } = await connectToDatabase()
-
-    // Verify class exists
-    let classObjectId
+    // Validate the ID
+    let classId
     try {
-      classObjectId = new ObjectId(id)
+      classId = new ObjectId(params.id)
     } catch (error) {
+      console.error("[API] Invalid class ID:", params.id)
       return NextResponse.json({ error: "Invalid class ID format" }, { status: 400 })
     }
 
-    const classData = await db.collection("classes").findOne({ _id: classObjectId })
+    // Find the class in the database
+    const classData = await db.collection("classes").findOne({ _id: classId })
+
     if (!classData) {
+      console.log(`[API] Class not found: ${params.id}`)
       return NextResponse.json({ error: "Class not found" }, { status: 404 })
     }
 
-    // If user is a teacher, verify they own this class
-    if (userRole === "teacher" && classData.teacherId.toString() !== userId) {
-      return NextResponse.json({ error: "Unauthorized - You can only view your own classes" }, { status: 401 })
-    }
-
-    // Convert ObjectIds to strings for JSON serialization
-    const serializedClass = {
-      ...classData,
-      _id: classData._id.toString(),
-      teacherId: classData.teacherId.toString(),
-      ...(classData.createdBy && { createdBy: classData.createdBy.toString() }),
-      ...(classData.updatedBy && { updatedBy: classData.updatedBy.toString() }),
-    }
-
-    return NextResponse.json({ class: serializedClass })
+    console.log(`[API] Class found: ${classData.name}`)
+    return NextResponse.json({ class: classData })
   } catch (error) {
-    console.error("[API] Get class error:", error)
-    return NextResponse.json({ error: "Internal server error", details: error.message }, { status: 500 })
+    console.error("[API] Error fetching class:", error)
+    return NextResponse.json({ error: "Failed to fetch class" }, { status: 500 })
   }
 }
 
 // Update a class
 export async function PUT(request, { params }) {
   try {
-    console.log("[API] PUT /api/classes/[id] - Updating class:", params.id)
+    console.log(`[API] PUT /api/classes/${params.id} - Updating class`)
 
-    // Get user from session
-    const user = await getSession()
+    // Get the session to check authentication
+    const session = await getServerSession(authOptions)
 
-    if (!user) {
-      console.log("[API] No user in session")
-      return NextResponse.json({ error: "Unauthorized - No user in session" }, { status: 401 })
+    if (!session || session.user.role !== "teacher") {
+      console.error("[API] Unauthorized access attempt")
+      return NextResponse.json({ error: "Unauthorized. Only teachers can update classes." }, { status: 401 })
     }
 
-    const userId = user.id
-    const userRole = user.role
+    // Connect to the database
+    const { db, isConnected, error } = await connectToDatabase()
 
-    if (userRole !== "teacher" && userRole !== "admin") {
-      return NextResponse.json({ error: "Unauthorized - Only teachers and admins can update classes" }, { status: 401 })
+    if (!isConnected) {
+      console.error("[API] Database connection failed:", error)
+      return NextResponse.json({ error: "Failed to connect to the database" }, { status: 500 })
     }
 
-    const { id } = params
-    const body = await request.json()
-    const { name, description, academicYear } = body
-
-    if (!name) {
-      return NextResponse.json({ error: "Class name is required" }, { status: 400 })
-    }
-
-    const { db } = await connectToDatabase()
-
-    // Verify class exists
-    let classObjectId
+    // Validate the ID
+    let classId
     try {
-      classObjectId = new ObjectId(id)
+      classId = new ObjectId(params.id)
     } catch (error) {
+      console.error("[API] Invalid class ID:", params.id)
       return NextResponse.json({ error: "Invalid class ID format" }, { status: 400 })
     }
 
-    const classExists = await db.collection("classes").findOne({ _id: classObjectId })
-    if (!classExists) {
+    // Get the request body
+    let classData
+    try {
+      classData = await request.json()
+      console.log("[API] Update data received:", classData)
+    } catch (error) {
+      console.error("[API] Error parsing request body:", error)
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
+    }
+
+    // Validate required fields
+    if (!classData.name) {
+      console.error("[API] Missing required field: name")
+      return NextResponse.json({ error: "Class name is required" }, { status: 400 })
+    }
+
+    // Prepare the update data
+    const updateData = {
+      name: classData.name,
+      description: classData.description || "",
+      subject: classData.subject || "",
+      schedule: classData.schedule || "",
+      room: classData.room || "",
+      updatedAt: new Date(),
+    }
+
+    // If teacherId is provided and valid, include it
+    if (classData.teacherId) {
+      try {
+        // Validate if it's a valid ObjectId
+        new ObjectId(classData.teacherId)
+        updateData.teacherId = classData.teacherId
+      } catch (error) {
+        console.warn("[API] Invalid teacherId format, using as string:", classData.teacherId)
+        // Still use it as a string if it's not a valid ObjectId
+        updateData.teacherId = classData.teacherId
+      }
+    }
+
+    console.log("[API] Final update data:", updateData)
+
+    // Update the class in the database
+    const result = await db.collection("classes").updateOne({ _id: classId }, { $set: updateData })
+
+    if (result.matchedCount === 0) {
+      console.log(`[API] Class not found: ${params.id}`)
       return NextResponse.json({ error: "Class not found" }, { status: 404 })
     }
 
-    // Verify teacher owns this class or is an admin
-    if (userRole === "teacher" && classExists.teacherId.toString() !== userId) {
-      return NextResponse.json({ error: "Unauthorized - You can only update your own classes" }, { status: 401 })
+    if (result.modifiedCount === 0) {
+      console.log(`[API] No changes made to class: ${params.id}`)
+      return NextResponse.json({
+        message: "No changes made to the class",
+        updated: false,
+      })
     }
 
-    // Check if class with same name already exists for this teacher (excluding this class)
-    const existingClass = await db.collection("classes").findOne({
-      _id: { $ne: classObjectId },
-      name,
-      teacherId: new ObjectId(userId),
-    })
+    console.log(`[API] Class updated successfully: ${params.id}`)
 
-    if (existingClass) {
-      return NextResponse.json({ error: "You already have another class with this name" }, { status: 400 })
-    }
-
-    // Update class
-    const updateData = {
-      name,
-      description: description || "",
-      academicYear: academicYear || classExists.academicYear,
-      updatedAt: new Date(),
-      updatedBy: new ObjectId(userId),
-    }
-
-    await db.collection("classes").updateOne({ _id: classObjectId }, { $set: updateData })
+    // Fetch the updated class
+    const updatedClass = await db.collection("classes").findOne({ _id: classId })
 
     return NextResponse.json({
-      success: true,
       message: "Class updated successfully",
-      class: {
-        ...classExists,
-        ...updateData,
-        _id: classExists._id.toString(),
-        teacherId: classExists.teacherId.toString(),
-        createdBy: classExists.createdBy.toString(),
-        updatedBy: updateData.updatedBy.toString(),
-      },
+      updated: true,
+      class: updatedClass,
     })
   } catch (error) {
-    console.error("[API] Update class error:", error)
-    return NextResponse.json({ error: "Internal server error", details: error.message }, { status: 500 })
+    console.error("[API] Error updating class:", error)
+    return NextResponse.json(
+      {
+        error: "Failed to update class",
+        details: process.env.NODE_ENV === "development" ? error.message : undefined,
+        stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+      },
+      { status: 500 },
+    )
   }
 }
 
 // Delete a class
 export async function DELETE(request, { params }) {
   try {
-    console.log("[API] DELETE /api/classes/[id] - Deleting class:", params.id)
+    console.log(`[API] DELETE /api/classes/${params.id} - Deleting class`)
 
-    // Get user from session
-    const user = await getSession()
+    // Get the session to check authentication
+    const session = await getServerSession(authOptions)
 
-    if (!user) {
-      console.log("[API] No user in session")
-      return NextResponse.json({ error: "Unauthorized - No user in session" }, { status: 401 })
+    if (!session || session.user.role !== "teacher") {
+      console.error("[API] Unauthorized access attempt")
+      return NextResponse.json({ error: "Unauthorized. Only teachers can delete classes." }, { status: 401 })
     }
 
-    const userId = user.id
-    const userRole = user.role
+    // Connect to the database
+    const { db, isConnected, error } = await connectToDatabase()
 
-    if (userRole !== "teacher" && userRole !== "admin") {
-      return NextResponse.json({ error: "Unauthorized - Only teachers and admins can delete classes" }, { status: 401 })
+    if (!isConnected) {
+      console.error("[API] Database connection failed:", error)
+      return NextResponse.json({ error: "Failed to connect to the database" }, { status: 500 })
     }
 
-    const { id } = params
-    const { searchParams } = new URL(request.url)
-    const force = searchParams.get("force") === "true"
-
-    const { db } = await connectToDatabase()
-
-    // Verify class exists
-    let classObjectId
+    // Validate the ID
+    let classId
     try {
-      classObjectId = new ObjectId(id)
+      classId = new ObjectId(params.id)
     } catch (error) {
+      console.error("[API] Invalid class ID:", params.id)
       return NextResponse.json({ error: "Invalid class ID format" }, { status: 400 })
     }
 
-    const classExists = await db.collection("classes").findOne({ _id: classObjectId })
-    if (!classExists) {
+    // Find the class first to check if it exists
+    const classData = await db.collection("classes").findOne({ _id: classId })
+
+    if (!classData) {
+      console.log(`[API] Class not found: ${params.id}`)
       return NextResponse.json({ error: "Class not found" }, { status: 404 })
     }
 
-    // Verify teacher owns this class or is an admin
-    if (userRole === "teacher" && classExists.teacherId.toString() !== userId) {
-      return NextResponse.json({ error: "Unauthorized - You can only delete your own classes" }, { status: 401 })
+    // Delete the class
+    const result = await db.collection("classes").deleteOne({ _id: classId })
+
+    if (result.deletedCount === 0) {
+      console.error(`[API] Failed to delete class: ${params.id}`)
+      return NextResponse.json({ error: "Failed to delete class" }, { status: 500 })
     }
 
-    // Check if class has students
-    const studentCount = await db.collection("students").countDocuments({ classId: classObjectId })
-
-    if (studentCount > 0 && !force) {
-      return NextResponse.json(
-        {
-          error: "Cannot delete class with students",
-          studentCount,
-          requiresForce: true,
-        },
-        { status: 400 },
-      )
-    }
-
-    // If force delete, update students to remove class reference
-    if (force && studentCount > 0) {
-      await db.collection("students").updateMany(
-        { classId: classObjectId },
-        {
-          $unset: { classId: "" },
-          $set: {
-            updatedAt: new Date(),
-            updatedBy: new ObjectId(userId),
-          },
-        },
-      )
-    }
-
-    // Delete class
-    await db.collection("classes").deleteOne({ _id: classObjectId })
-
+    console.log(`[API] Class deleted successfully: ${params.id}`)
     return NextResponse.json({
-      success: true,
-      message: force ? `Class deleted and ${studentCount} students removed from class` : "Class deleted successfully",
+      message: "Class deleted successfully",
+      deleted: true,
     })
   } catch (error) {
-    console.error("[API] Delete class error:", error)
-    return NextResponse.json({ error: "Internal server error", details: error.message }, { status: 500 })
+    console.error("[API] Error deleting class:", error)
+    return NextResponse.json({ error: "Failed to delete class" }, { status: 500 })
   }
 }
 

@@ -1,19 +1,16 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Box,
-  Button,
-  Flex,
   Heading,
-  Text,
-  SimpleGrid,
-  Card,
-  CardHeader,
-  CardBody,
-  CardFooter,
-  Badge,
-  Icon,
+  Button,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
   Modal,
   ModalOverlay,
   ModalContent,
@@ -25,84 +22,164 @@ import {
   FormLabel,
   Input,
   Textarea,
-  Select,
-  Spinner,
   useDisclosure,
   useToast,
+  Spinner,
+  Text,
+  Badge,
+  IconButton,
+  Flex,
+  Alert,
+  AlertIcon,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuItem,
 } from "@chakra-ui/react"
-import { FaUserGraduate, FaBook, FaPlus, FaEdit, FaTrash } from "react-icons/fa"
+import { FaPlus, FaEdit, FaTrash, FaEllipsisV, FaUsers, FaBook } from "react-icons/fa"
 
-export default function ClassesList({ classes, setClasses, loading }) {
-  const { isOpen, onOpen, onClose } = useDisclosure()
-  const [isEditing, setIsEditing] = useState(false)
-  const [currentClass, setCurrentClass] = useState(null)
+const ClassesList = () => {
+  const [classes, setClasses] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [selectedClass, setSelectedClass] = useState(null)
   const [formData, setFormData] = useState({
     name: "",
     description: "",
-    academicYear: new Date().getFullYear() + "-" + (new Date().getFullYear() + 1),
+    subject: "",
+    schedule: "",
+    room: "",
   })
-  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const { isOpen, onOpen, onClose } = useDisclosure()
   const toast = useToast()
 
-  // Handle form input changes
-  const handleChange = (e) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
-  }
+  // Fetch classes on component mount
+  useEffect(() => {
+    fetchClasses()
+  }, [])
 
-  // Open modal for creating a new class
-  const handleCreateClass = () => {
-    setIsEditing(false)
-    setFormData({
-      name: "",
-      description: "",
-      academicYear: new Date().getFullYear() + "-" + (new Date().getFullYear() + 1),
-    })
-    onOpen()
-  }
-
-  // Open modal for editing an existing class
-  const handleEditClass = (classData) => {
-    setIsEditing(true)
-    setCurrentClass(classData)
-    setFormData({
-      name: classData.name,
-      description: classData.description || "",
-      academicYear: classData.academicYear,
-    })
-    onOpen()
-  }
-
-  // Submit form to create or update a class
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setIsSubmitting(true)
+  // Fetch all classes
+  const fetchClasses = async () => {
+    setLoading(true)
+    setError(null)
 
     try {
-      if (isEditing && currentClass) {
+      const response = await fetch("/api/classes", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch classes: ${response.status}`)
+      }
+
+      const data = await response.json()
+      console.log("[ClassesList] Classes:", data)
+
+      setClasses(data.classes || [])
+    } catch (err) {
+      console.error("[ClassesList] Error fetching classes:", err)
+      setError(err.message)
+
+      toast({
+        title: "Error",
+        description: `Failed to fetch classes: ${err.message}`,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Handle opening the modal for creating or editing a class
+  const handleOpenModal = (cls = null) => {
+    if (cls) {
+      // Editing existing class
+      setSelectedClass(cls)
+      setFormData({
+        name: cls.name || "",
+        description: cls.description || "",
+        subject: cls.subject || "",
+        schedule: cls.schedule || "",
+        room: cls.room || "",
+      })
+    } else {
+      // Creating new class
+      setSelectedClass(null)
+      setFormData({
+        name: "",
+        description: "",
+        subject: "",
+        schedule: "",
+        room: "",
+      })
+    }
+
+    onOpen()
+  }
+
+  // Handle form input changes
+  const handleInputChange = (e) => {
+    const { name, value } = e.target
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }))
+  }
+
+  // Handle form submission
+  const handleSubmit = async () => {
+    try {
+      if (!formData.name) {
+        toast({
+          title: "Error",
+          description: "Class name is required",
+          status: "error",
+          duration: 3000,
+          isClosable: true,
+        })
+        return
+      }
+
+      setLoading(true)
+
+      if (selectedClass) {
         // Update existing class
-        const response = await fetch(`/api/classes/${currentClass._id}`, {
+        console.log(`[ClassesList] Updating class ${selectedClass._id}:`, formData)
+
+        const response = await fetch(`/api/classes/${selectedClass._id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify({
+            ...formData,
+            teacherId: selectedClass.teacherId, // Preserve the teacher ID
+          }),
         })
 
         if (!response.ok) {
+          const errorText = await response.text()
+          console.error("[ClassesList] Update response:", response.status, errorText)
           throw new Error("Failed to update class")
         }
 
-        // Update classes state
-        setClasses(classes.map((c) => (c._id === currentClass._id ? { ...c, ...formData } : c)))
+        const data = await response.json()
+        console.log("[ClassesList] Update response:", data)
 
         toast({
-          title: "Class updated",
-          description: `${formData.name} has been updated successfully.`,
+          title: "Success",
+          description: "Class updated successfully",
           status: "success",
           duration: 3000,
           isClosable: true,
         })
       } else {
         // Create new class
+        console.log("[ClassesList] Creating new class:", formData)
+
         const response = await fetch("/api/classes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -113,204 +190,236 @@ export default function ClassesList({ classes, setClasses, loading }) {
           throw new Error("Failed to create class")
         }
 
-        const data = await response.json()
-
-        // Add new class to state
-        const newClass = {
-          _id: data.classId,
-          ...formData,
-          students: [],
-          createdAt: new Date().toISOString(),
-        }
-
-        setClasses([...classes, newClass])
-
         toast({
-          title: "Class created",
-          description: `${formData.name} has been created successfully.`,
+          title: "Success",
+          description: "Class created successfully",
           status: "success",
           duration: 3000,
           isClosable: true,
         })
       }
 
+      // Refresh the classes list
+      fetchClasses()
+
+      // Close the modal
       onClose()
-    } catch (error) {
-      console.error("Error submitting class:", error)
+    } catch (err) {
+      console.error("[ClassesList] Error submitting class:", err)
+
       toast({
         title: "Error",
-        description: error.message,
+        description: err.message,
         status: "error",
-        duration: 3000,
+        duration: 5000,
         isClosable: true,
       })
     } finally {
-      setIsSubmitting(false)
+      setLoading(false)
     }
   }
 
-  // Delete a class
-  const handleDeleteClass = async (classId, className) => {
-    if (!window.confirm(`Are you sure you want to delete ${className}? This action cannot be undone.`)) {
+  // Handle deleting a class
+  const handleDelete = async (classId) => {
+    if (!confirm("Are you sure you want to delete this class?")) {
       return
     }
 
     try {
+      setLoading(true)
+
       const response = await fetch(`/api/classes/${classId}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
       })
 
       if (!response.ok) {
         throw new Error("Failed to delete class")
       }
 
-      // Remove class from state
-      setClasses(classes.filter((c) => c._id !== classId))
-
       toast({
-        title: "Class deleted",
-        description: `${className} has been deleted successfully.`,
+        title: "Success",
+        description: "Class deleted successfully",
         status: "success",
         duration: 3000,
         isClosable: true,
       })
-    } catch (error) {
-      console.error("Error deleting class:", error)
+
+      // Refresh the classes list
+      fetchClasses()
+    } catch (err) {
+      console.error("[ClassesList] Error deleting class:", err)
+
       toast({
         title: "Error",
-        description: error.message,
+        description: err.message,
         status: "error",
-        duration: 3000,
+        duration: 5000,
         isClosable: true,
       })
+    } finally {
+      setLoading(false)
     }
   }
 
-  if (loading) {
-    return (
-      <Flex justify="center" align="center" minH="200px">
-        <Spinner size="xl" color="blue.500" />
-      </Flex>
-    )
+  // View students in a class
+  const viewStudents = (classId) => {
+    // Navigate to students page for this class
+    window.location.href = `/teacher-dashboard/classes/${classId}/students`
+  }
+
+  // View assessments for a class
+  const viewAssessments = (classId) => {
+    // Navigate to assessments page for this class
+    window.location.href = `/teacher-dashboard/classes/${classId}/assessments`
   }
 
   return (
     <Box>
-      <Flex justify="space-between" align="center" mb={6}>
-        <Heading size="md">Your Classes</Heading>
-        <Button leftIcon={<FaPlus />} colorScheme="blue" onClick={handleCreateClass}>
-          Create Class
+      <Flex justify="space-between" align="center" mb={4}>
+        <Heading size="md">Classes</Heading>
+        <Button leftIcon={<FaPlus />} colorScheme="blue" onClick={() => handleOpenModal()}>
+          Add Class
         </Button>
       </Flex>
 
-      {classes.length === 0 ? (
-        <Card p={6} textAlign="center">
-          <CardBody>
-            <Text mb={4}>You haven't created any classes yet.</Text>
-            <Button leftIcon={<FaPlus />} colorScheme="blue" onClick={handleCreateClass}>
-              Create Your First Class
-            </Button>
-          </CardBody>
-        </Card>
-      ) : (
-        <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
-          {Array.isArray(classes) && classes.map((classItem) => (
-            <Card key={classItem._id} borderWidth="1px" borderRadius="lg" overflow="hidden">
-              <CardHeader bg="blue.50" py={4}>
-                <Heading size="md">{classItem.name}</Heading>
-                <Badge colorScheme="blue" mt={2}>
-                  {classItem.academicYear}
-                </Badge>
-              </CardHeader>
-
-              <CardBody>
-                <Text noOfLines={2} mb={4}>
-                  {classItem.description || "No description provided."}
-                </Text>
-
-                <Flex justify="space-between" mt={4}>
-                  <Flex align="center">
-                    <Icon as={FaUserGraduate} color="green.500" mr={2} />
-                    <Text>{classItem.students?.length || 0} Students</Text>
-                  </Flex>
-                  <Flex align="center">
-                    <Icon as={FaBook} color="purple.500" mr={2} />
-                    <Text>0 Subjects</Text>
-                  </Flex>
-                </Flex>
-              </CardBody>
-
-              <CardFooter borderTopWidth="1px" justifyContent="space-between" bg="gray.50" py={3}>
-                <Button
-                  leftIcon={<FaEdit />}
-                  size="sm"
-                  colorScheme="blue"
-                  variant="ghost"
-                  onClick={() => handleEditClass(classItem)}
-                >
-                  Edit
-                </Button>
-                <Button
-                  leftIcon={<FaTrash />}
-                  size="sm"
-                  colorScheme="red"
-                  variant="ghost"
-                  onClick={() => handleDeleteClass(classItem._id, classItem.name)}
-                >
-                  Delete
-                </Button>
-              </CardFooter>
-            </Card>
-          ))}
-        </SimpleGrid>
+      {error && (
+        <Alert status="error" mb={4}>
+          <AlertIcon />
+          {error}
+        </Alert>
       )}
 
-      {/* Create/Edit Class Modal */}
+      {loading && classes.length === 0 ? (
+        <Box textAlign="center" py={10}>
+          <Spinner size="xl" />
+          <Text mt={4}>Loading classes...</Text>
+        </Box>
+      ) : classes.length === 0 ? (
+        <Alert status="info" mb={4}>
+          <AlertIcon />
+          No classes found. Create your first class by clicking the "Add Class" button.
+        </Alert>
+      ) : (
+        <Box overflowX="auto">
+          <Table variant="simple">
+            <Thead>
+              <Tr>
+                <Th>Name</Th>
+                <Th>Subject</Th>
+                <Th>Schedule</Th>
+                <Th>Room</Th>
+                <Th>Actions</Th>
+              </Tr>
+            </Thead>
+            <Tbody>
+              {classes.map((cls) => (
+                <Tr key={cls._id}>
+                  <Td>
+                    <Text fontWeight="medium">{cls.name}</Text>
+                    {cls.description && (
+                      <Text fontSize="sm" color="gray.600" noOfLines={1}>
+                        {cls.description}
+                      </Text>
+                    )}
+                  </Td>
+                  <Td>
+                    <Badge colorScheme="blue">{cls.subject || "No Subject"}</Badge>
+                  </Td>
+                  <Td>{cls.schedule || "Not scheduled"}</Td>
+                  <Td>{cls.room || "No room assigned"}</Td>
+                  <Td>
+                    <Menu>
+                      <MenuButton
+                        as={IconButton}
+                        icon={<FaEllipsisV />}
+                        variant="ghost"
+                        size="sm"
+                        aria-label="Actions"
+                      />
+                      <MenuList>
+                        <MenuItem icon={<FaEdit />} onClick={() => handleOpenModal(cls)}>
+                          Edit
+                        </MenuItem>
+                        <MenuItem icon={<FaUsers />} onClick={() => viewStudents(cls._id)}>
+                          Students
+                        </MenuItem>
+                        <MenuItem icon={<FaBook />} onClick={() => viewAssessments(cls._id)}>
+                          Assessments
+                        </MenuItem>
+                        <MenuItem icon={<FaTrash />} onClick={() => handleDelete(cls._id)} color="red.500">
+                          Delete
+                        </MenuItem>
+                      </MenuList>
+                    </Menu>
+                  </Td>
+                </Tr>
+              ))}
+            </Tbody>
+          </Table>
+        </Box>
+      )}
+
+      {/* Modal for creating/editing a class */}
       <Modal isOpen={isOpen} onClose={onClose}>
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>{isEditing ? `Edit ${currentClass?.name}` : "Create New Class"}</ModalHeader>
+          <ModalHeader>{selectedClass ? "Edit Class" : "Create New Class"}</ModalHeader>
           <ModalCloseButton />
+          <ModalBody>
+            <FormControl mb={4} isRequired>
+              <FormLabel>Class Name</FormLabel>
+              <Input name="name" value={formData.name} onChange={handleInputChange} placeholder="Enter class name" />
+            </FormControl>
 
-          <form onSubmit={handleSubmit}>
-            <ModalBody>
-              <FormControl isRequired mb={4}>
-                <FormLabel>Class Name</FormLabel>
-                <Input name="name" value={formData.name} onChange={handleChange} placeholder="e.g., Mathematics 101" />
-              </FormControl>
+            <FormControl mb={4}>
+              <FormLabel>Description</FormLabel>
+              <Textarea
+                name="description"
+                value={formData.description}
+                onChange={handleInputChange}
+                placeholder="Enter class description"
+              />
+            </FormControl>
 
-              <FormControl mb={4}>
-                <FormLabel>Description</FormLabel>
-                <Textarea
-                  name="description"
-                  value={formData.description}
-                  onChange={handleChange}
-                  placeholder="Provide a brief description of this class"
-                  rows={3}
-                />
-              </FormControl>
+            <FormControl mb={4}>
+              <FormLabel>Subject</FormLabel>
+              <Input name="subject" value={formData.subject} onChange={handleInputChange} placeholder="Enter subject" />
+            </FormControl>
 
-              <FormControl isRequired>
-                <FormLabel>Academic Year</FormLabel>
-                <Select name="academicYear" value={formData.academicYear} onChange={handleChange}>
-                  <option value="2023-2024">2023-2024</option>
-                  <option value="2024-2025">2024-2025</option>
-                  <option value="2025-2026">2025-2026</option>
-                </Select>
-              </FormControl>
-            </ModalBody>
+            <FormControl mb={4}>
+              <FormLabel>Schedule</FormLabel>
+              <Input
+                name="schedule"
+                value={formData.schedule}
+                onChange={handleInputChange}
+                placeholder="E.g., Mon/Wed/Fri 10:00 AM - 11:30 AM"
+              />
+            </FormControl>
 
-            <ModalFooter>
-              <Button variant="ghost" mr={3} onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit" colorScheme="blue" isLoading={isSubmitting}>
-                {isEditing ? "Update" : "Create"}
-              </Button>
-            </ModalFooter>
-          </form>
+            <FormControl mb={4}>
+              <FormLabel>Room</FormLabel>
+              <Input
+                name="room"
+                value={formData.room}
+                onChange={handleInputChange}
+                placeholder="Enter room number or location"
+              />
+            </FormControl>
+          </ModalBody>
+
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button colorScheme="blue" onClick={handleSubmit} isLoading={loading}>
+              {selectedClass ? "Update" : "Create"}
+            </Button>
+          </ModalFooter>
         </ModalContent>
       </Modal>
     </Box>
   )
 }
+
+export default ClassesList
