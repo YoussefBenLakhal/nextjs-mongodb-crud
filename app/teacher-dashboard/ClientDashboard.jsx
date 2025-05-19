@@ -1,286 +1,429 @@
-// Path: C:\Users\Administrator\Desktop\BDD\nextjs-mongodb-crud\app\teacher-dashboard\ClientDashboard.jsx
+"use client"
 
-'use client';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { clientLogout } from '@/lib/client-auth';
-import { 
+import { useState, useEffect, useCallback, useRef } from "react"
+import {
   Box,
+  Container,
   Flex,
-  Grid,
   Heading,
   Text,
-  Button,
+  SimpleGrid,
+  Card,
+  CardHeader,
+  CardBody,
+  Stat,
+  StatLabel,
+  StatNumber,
+  StatHelpText,
+  Icon,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  useColorModeValue,
   useToast,
-  Spinner,
-  FormControl,
-  FormLabel,
-  Input,
-  Select,
-  NumberInput,
-  NumberInputField,
-  NumberInputStepper,
-  NumberIncrementStepper,
-  NumberDecrementStepper
-} from '@chakra-ui/react';
+  Button,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuItem,
+  Avatar,
+  HStack,
+} from "@chakra-ui/react"
+import {
+  FaChalkboardTeacher,
+  FaUserGraduate,
+  FaBook,
+  FaCalendarCheck,
+  FaUserCircle,
+  FaSignOutAlt,
+  FaChevronDown,
+} from "react-icons/fa"
+import { useRouter } from "next/navigation"
+import ClassesList from "./components/ClassesList"
+import StudentsList from "./components/StudentsList"
+import SubjectsList from "./components/SubjectsList"
+import AttendanceManager from "./components/AttendanceManager"
+import AssessmentManager from "./components/AssessmentManager"
+import ConnectionStatus from "./components/ConnectionStatus"
 
-export default function TeacherDashboard({ initialSession }) {
-  const router = useRouter();
-  const toast = useToast();
-  const [session, setSession] = useState(initialSession || null);
-  const [loading, setLoading] = useState(!initialSession);
-  const [loadingAction, setLoadingAction] = useState(false);
-  const [formData, setFormData] = useState({
-    studentEmail: '',
-    course: 'Math',
-    grade: '',
-    absences: 0
-  });
+export default function ClientDashboard({ user }) {
+  const [classes, setClasses] = useState([])
+  const [students, setStudents] = useState([])
+  const [subjects, setSubjects] = useState([])
+  const [connectionError, setConnectionError] = useState(false)
+  const [loading, setLoading] = useState({
+    classes: true,
+    students: false,
+    subjects: false,
+    connectionTest: false,
+    logout: false,
+  })
+  const [activeTab, setActiveTab] = useState(0)
+  const router = useRouter()
+  const toast = useToast()
 
-  // Session verification
-  useEffect(() => {
-    if (initialSession) return;
+  // Use refs to prevent multiple fetches
+  const subjectsFetchedRef = useRef(false)
 
-    const verifySession = async () => {
-      setLoading(true);
-      try {
-        const response = await fetch('/api/auth/session', {
-          credentials: 'include',
-          cache: 'no-store'
-        });
+  const bgColor = useColorModeValue("white", "gray.800")
+  const borderColor = useColorModeValue("gray.200", "gray.700")
 
-        if (!response.ok) {
-          throw new Error(response.status === 401 ? 'Session expired' : 'Session verification failed');
-        }
-
-        const data = await response.json();
-        console.log('Session verification response:', data);
-        
-        if (!data?.user || data.user.role !== 'teacher') {
-          throw new Error('Teacher privileges required');
-        }
-
-        setSession(data.user);
-      } catch (error) {
-        console.error('Session verification error:', error);
-        toast({
-          title: 'Access Denied',
-          description: error.message,
-          status: 'error',
-          duration: 5000,
-          isClosable: true,
-        });
-        router.push('/unauthorized');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    verifySession();
-  }, [router, toast, initialSession]);
-
+  // Handle logout
   const handleLogout = async () => {
     try {
-      await clientLogout();
-    } catch (error) {
-      toast({
-        title: 'Logout Failed',
-        description: error.message || 'Please try again',
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
-    }
-  };
+      setLoading((prev) => ({ ...prev, logout: true }))
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoadingAction(true);
-    
-    try {
-      const endpoint = formData.grade ? '/api/grades' : '/api/absences';
-      console.log('Submitting to endpoint:', endpoint);
-      console.log('Form data:', formData);
-      
-      // Check if we have a session before submitting
-      const sessionCheckResponse = await fetch('/api/auth/session', {
-        credentials: 'include'
-      });
-      
-      const sessionData = await sessionCheckResponse.json();
-      console.log('Current session before submission:', sessionData);
-      
-      if (!sessionCheckResponse.ok) {
-        throw new Error('Session validation failed. Please log in again.');
-      }
-      
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          studentEmail: formData.studentEmail,
-          course: formData.course,
-          ...(formData.grade && { grade: parseFloat(formData.grade) }),
-          ...(formData.absences > 0 && { count: formData.absences })
-        }),
-        credentials: 'include' // This is crucial - ensures cookies are sent
-      });
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      })
 
-      console.log('Response status:', response.status);
-      
-      const responseData = await response.json();
-      console.log('Response data:', responseData);
-      
       if (!response.ok) {
-        throw new Error(responseData.error || 'Failed to submit record');
+        throw new Error("Logout failed")
       }
-      
+
       toast({
-        title: 'Success',
-        description: 'Record submitted successfully',
-        status: 'success',
+        title: "Logged out successfully",
+        status: "success",
         duration: 3000,
         isClosable: true,
-      });
+      })
 
-      setFormData({ 
-        studentEmail: '',
-        course: 'Math',
-        grade: '',
-        absences: 0
-      });
-
+      // Redirect to login page
+      router.push("/login")
     } catch (error) {
-      console.error('Submission error:', error);
+      console.error("Logout error:", error)
       toast({
-        title: 'Error',
+        title: "Logout failed",
         description: error.message,
-        status: 'error',
+        status: "error",
         duration: 5000,
         isClosable: true,
-      });
+      })
     } finally {
-      setLoadingAction(false);
+      setLoading((prev) => ({ ...prev, logout: false }))
     }
-  };
-
-  if (loading || !session) {
-    return (
-      <Flex minH="100vh" align="center" justify="center">
-        <Spinner size="xl" thickness="4px" />
-      </Flex>
-    );
   }
 
+  // Test connection to the server and database
+  const testConnection = async () => {
+    setLoading((prev) => ({ ...prev, connectionTest: true }))
+    setConnectionError(false)
+
+    try {
+      const response = await fetch("/api/connection-test", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+      })
+
+      if (!response.ok) {
+        throw new Error("Connection test failed")
+      }
+
+      const data = await response.json()
+
+      if (!data.database.connected) {
+        toast({
+          title: "Database Connection Issue",
+          description: `Could not connect to the database: ${data.database.error}`,
+          status: "error",
+          duration: 5000,
+          isClosable: true,
+        })
+        setConnectionError(true)
+        return false
+      }
+
+      toast({
+        title: "Connection Test Successful",
+        description: "Server and database are running correctly.",
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      })
+
+      return true
+    } catch (error) {
+      console.error("Connection test error:", error)
+      toast({
+        title: "Connection Error",
+        description: "Could not connect to the server. Please check if the server is running.",
+        status: "error",
+        duration: null,
+        isClosable: true,
+      })
+      setConnectionError(true)
+      return false
+    } finally {
+      setLoading((prev) => ({ ...prev, connectionTest: false }))
+    }
+  }
+
+  // Fetch teacher's classes
+  useEffect(() => {
+    async function fetchClasses() {
+      try {
+        console.log("[ClientDashboard] Fetching classes...")
+        setLoading((prev) => ({ ...prev, classes: true }))
+
+        const response = await fetch("/api/classes", {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+        })
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch classes")
+        }
+
+        const data = await response.json()
+        console.log(`[ClientDashboard] Fetched ${data.classes?.length || 0} classes`)
+        setClasses(data.classes || [])
+      } catch (error) {
+        console.error("[ClientDashboard] Error fetching classes:", error)
+        toast({
+          title: "Error",
+          description: "Failed to load classes. Please try again.",
+          status: "error",
+          duration: 3000,
+          isClosable: true,
+        })
+
+        // Use fallback data if fetch fails
+        setClasses([
+          {
+            _id: "fallback1",
+            name: "Class 10A",
+            grade: "10",
+            section: "A",
+            studentCount: 25,
+          },
+          {
+            _id: "fallback2",
+            name: "Class 11B",
+            grade: "11",
+            section: "B",
+            studentCount: 22,
+          },
+        ])
+      } finally {
+        setLoading((prev) => ({ ...prev, classes: false }))
+      }
+    }
+
+    fetchClasses()
+  }, [toast])
+
+  // Fetch subjects when needed - memoized to prevent recreation on each render
+  const fetchSubjects = useCallback(
+    async (force = false) => {
+      // Only fetch if we haven't fetched yet or if force is true
+      if (subjectsFetchedRef.current && !force) {
+        console.log("[ClientDashboard] Subjects already fetched, skipping fetch")
+        return
+      }
+
+      if (loading.subjects) {
+        console.log("[ClientDashboard] Already fetching subjects, skipping fetch")
+        return
+      }
+
+      console.log("[ClientDashboard] Fetching subjects...")
+      setLoading((prev) => ({ ...prev, subjects: true }))
+
+      try {
+        const response = await fetch("/api/subjects", {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+        })
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch subjects")
+        }
+
+        const data = await response.json()
+        console.log(`[ClientDashboard] Fetched ${data.subjects?.length || 0} subjects`)
+        setSubjects(data.subjects || [])
+
+        // Mark as fetched to prevent additional fetches
+        subjectsFetchedRef.current = true
+      } catch (error) {
+        console.error("[ClientDashboard] Error fetching subjects:", error)
+        toast({
+          title: "Error",
+          description: "Failed to load subjects. Using fallback data.",
+          status: "error",
+          duration: 3000,
+          isClosable: true,
+        })
+
+        // Use fallback data if fetch fails
+        setSubjects([
+          {
+            _id: "fallback1",
+            name: "Mathematics",
+            code: "MATH101",
+            description: "Introduction to algebra, geometry, and calculus",
+            classId: "fallback1",
+          },
+          {
+            _id: "fallback2",
+            name: "Science",
+            code: "SCI101",
+            description: "Basic principles of physics, chemistry, and biology",
+            classId: "fallback1",
+          },
+        ])
+      } finally {
+        setLoading((prev) => ({ ...prev, subjects: false }))
+      }
+    },
+    [loading.subjects, toast],
+  )
+
+  // Fetch subjects when the subjects tab is selected
+  useEffect(() => {
+    if (activeTab === 2 && !subjectsFetchedRef.current && !loading.subjects) {
+      console.log("[ClientDashboard] Subjects tab selected, fetching subjects...")
+      fetchSubjects()
+    }
+  }, [activeTab, loading.subjects, fetchSubjects])
+
+  // Handle tab change
+  const handleTabChange = (index) => {
+    setActiveTab(index)
+  }
+
+  // Stats for the dashboard
+  const stats = [
+    {
+      label: "Classes",
+      value: Array.isArray(classes) ? classes.length : 0,
+      icon: FaChalkboardTeacher,
+      color: "blue.500",
+    },
+    {
+      label: "Students",
+      value: Array.isArray(classes) ? classes.reduce((acc, cls) => acc + (cls.students?.length || 0), 0) : 0,
+      icon: FaUserGraduate,
+      color: "green.500",
+    },
+    {
+      label: "Subjects",
+      value: Array.isArray(subjects) ? subjects.length : 0,
+      icon: FaBook,
+      color: "purple.500",
+    },
+    {
+      label: "Today's Sessions",
+      value: "N/A",
+      icon: FaCalendarCheck,
+      color: "orange.500",
+    },
+  ]
+
   return (
-    <Box minH="100vh" bg="gray.50">
-      {/* Navigation Header */}
-      <Box bg="white" boxShadow="sm" py={4}>
-        <Flex maxW="7xl" mx="auto" px={6} justify="space-between" align="center">
-          <Heading size="lg" color="blue.600">Teacher Portal</Heading>
-          <Flex align="center" gap={4}>
-            <Text fontWeight="medium">{session.email}</Text>
-            <Button 
-              onClick={handleLogout} 
-              colorScheme="red" 
-              variant="outline"
-              size="sm"
-            >
-              Logout
-            </Button>
-          </Flex>
-        </Flex>
-      </Box>
+    <Container maxW="container.xl" py={6}>
+      <Flex justify="space-between" align="center" mb={6}>
+        <Heading as="h1" size="xl">
+          Teacher Dashboard
+        </Heading>
 
-      {/* Main Content */}
-      <Box py={10} px={6} maxW="7xl" mx="auto">
-        <Box bg="white" p={8} borderRadius="lg" boxShadow="md">
-          <Heading size="xl" mb={8} color="blue.700">Grade & Attendance</Heading>
-          
-          <form onSubmit={handleSubmit}>
-            <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={6} mb={8}>
-              <FormControl>
-                <FormLabel>Student Email</FormLabel>
-                <Input
-                  type="email"
-                  value={formData.studentEmail}
-                  onChange={(e) => setFormData({...formData, studentEmail: e.target.value})}
-                  required
+        <Menu>
+          <MenuButton as={Button} rightIcon={<FaChevronDown />} colorScheme="purple" variant="outline">
+            <HStack spacing={2}>
+              <Avatar size="xs" icon={<FaUserCircle />} bg="purple.500" />
+              <Text>{user.name}</Text>
+            </HStack>
+          </MenuButton>
+          <MenuList>
+            <MenuItem icon={<FaUserCircle />}>Profile</MenuItem>
+            <MenuItem icon={<FaSignOutAlt />} onClick={handleLogout} isDisabled={loading.logout}>
+              {loading.logout ? "Logging out..." : "Logout"}
+            </MenuItem>
+          </MenuList>
+        </Menu>
+      </Flex>
+
+      <Text fontSize="lg" mb={8}>
+        Welcome back, {user.name}! Here's an overview of your teaching activities.
+      </Text>
+
+      {/* Connection Status Component */}
+      <ConnectionStatus />
+
+      {/* Stats Cards */}
+      <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={6} mb={8}>
+        {stats.map((stat, index) => (
+          <Card key={index} bg={bgColor} borderWidth="1px" borderColor={borderColor} shadow="md">
+            <CardBody>
+              <Flex align="center">
+                <Box p={3} bg={stat.color} borderRadius="full" color="white" mr={4}>
+                  <Icon as={stat.icon} boxSize={6} />
+                </Box>
+                <Stat>
+                  <StatLabel fontSize="sm">{stat.label}</StatLabel>
+                  <StatNumber fontSize="2xl">{stat.value}</StatNumber>
+                  <StatHelpText>Academic Year 2024-2025</StatHelpText>
+                </Stat>
+              </Flex>
+            </CardBody>
+          </Card>
+        ))}
+      </SimpleGrid>
+
+      {/* Main Content Tabs */}
+      <Card bg={bgColor} borderWidth="1px" borderColor={borderColor} shadow="md">
+        <CardHeader p={0}>
+          <Tabs colorScheme="blue" isLazy index={activeTab} onChange={handleTabChange}>
+            <TabList px={4}>
+              <Tab>Classes</Tab>
+              <Tab>Students</Tab>
+              <Tab>Subjects</Tab>
+              <Tab>Attendance</Tab>
+              <Tab>Grades</Tab>
+            </TabList>
+
+            <TabPanels>
+              {/* Classes Tab */}
+              <TabPanel>
+                <ClassesList classes={classes} setClasses={setClasses} loading={loading.classes} />
+              </TabPanel>
+
+              {/* Students Tab */}
+              <TabPanel>
+                <StudentsList classes={classes} loading={loading.students} />
+              </TabPanel>
+
+              {/* Subjects Tab */}
+              <TabPanel>
+                <SubjectsList
+                  classes={classes}
+                  subjects={subjects}
+                  setSubjects={setSubjects}
+                  loading={loading.subjects}
+                  fetchSubjects={fetchSubjects}
                 />
-              </FormControl>
+              </TabPanel>
 
-              <FormControl>
-                <FormLabel>Course</FormLabel>
-                <Select
-                  value={formData.course}
-                  onChange={(e) => setFormData({...formData, course: e.target.value})}
-                >
-                  <option value="Math">Mathematics</option>
-                  <option value="Science">Science</option>
-                  <option value="English">English</option>
-                  <option value="History">History</option>
-                </Select>
-              </FormControl>
+              {/* Attendance Tab */}
+              <TabPanel>
+                <AttendanceManager classes={classes} subjects={subjects} fetchSubjects={fetchSubjects} />
+              </TabPanel>
 
-              <FormControl>
-                <FormLabel>Grade (0-100)</FormLabel>
-                <NumberInput 
-                  min={0} 
-                  max={100}
-                  value={formData.grade}
-                  onChange={(value) => setFormData({...formData, grade: value})}
-                >
-                  <NumberInputField />
-                  <NumberInputStepper>
-                    <NumberIncrementStepper />
-                    <NumberDecrementStepper />
-                  </NumberInputStepper>
-                </NumberInput>
-              </FormControl>
-
-              <FormControl>
-                <FormLabel>Absences</FormLabel>
-                <NumberInput
-                  min={0}
-                  value={formData.absences}
-                  onChange={(value) => setFormData({...formData, absences: value})}
-                >
-                  <NumberInputField />
-                  <NumberInputStepper>
-                    <NumberIncrementStepper />
-                    <NumberDecrementStepper />
-                  </NumberInputStepper>
-                </NumberInput>
-              </FormControl>
-            </Grid>
-
-            <Flex justify="flex-end" gap={4}>
-              <Button 
-                type="reset" 
-                variant="outline"
-                onClick={() => setFormData({
-                  studentEmail: '',
-                  course: 'Math',
-                  grade: '',
-                  absences: 0
-                })}
-              >
-                Clear
-              </Button>
-              <Button 
-                type="submit" 
-                colorScheme="blue"
-                isLoading={loadingAction}
-                loadingText="Submitting..."
-              >
-                Submit Record
-              </Button>
-            </Flex>
-          </form>
-        </Box>
-      </Box>
-    </Box>
-  );
+              {/* Grades Tab */}
+              <TabPanel>
+                <AssessmentManager classes={classes} subjects={subjects} fetchSubjects={fetchSubjects} />
+              </TabPanel>
+            </TabPanels>
+          </Tabs>
+        </CardHeader>
+      </Card>
+    </Container>
+  )
 }

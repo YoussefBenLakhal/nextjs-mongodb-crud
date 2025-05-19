@@ -1,21 +1,26 @@
-// app/teacher-dashboard/page.js
-import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/server-auth';
-import TeacherDashboardClient from './ClientDashboard';
+import { redirect } from "next/navigation"
+import { getSession } from "../../lib/server-auth"
+import ClientDashboard from "./ClientDashboard"
 
 export default async function TeacherDashboardPage() {
-  const session = await getSession();
+  console.log("Teacher Dashboard: Checking session")
+  const user = await getSession()
 
-  if (!session) {
-    redirect('/login');
+  if (!user) {
+    console.log("Teacher Dashboard: No user found, redirecting to login")
+    redirect("/login?redirect=/teacher-dashboard")
   }
 
-  if (session.role !== 'teacher') {
-    console.error(`Unauthorized access attempt by ${session.email} with role ${session.role}`);
-    redirect('/unauthorized');
+  console.log("Teacher Dashboard: User found with role", user.role)
+  if (user.role !== "teacher") {
+    console.log("Teacher Dashboard: User is not a teacher, redirecting to unauthorized")
+    redirect("/unauthorized")
   }
 
-  return <TeacherDashboardClient initialSession={session} />;
+  console.log("Teacher Dashboard: Rendering dashboard for teacher")
+  return <ClientDashboard user={user} />
 }
 
-export const dynamic = 'force-dynamic';
+// Ensure this page is not cached
+export const dynamic = "force-dynamic"
+export const fetchCache = "force-no-store"

@@ -1,7 +1,29 @@
+// app/register/page.jsx
 'use client';
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { clientRegister } from '@/lib/client-auth';
+import {
+  Box,
+  Button,
+  Container,
+  FormControl,
+  FormLabel,
+  Heading,
+  Input,
+  Select,
+  Stack,
+  Text,
+  Alert,
+  AlertIcon,
+  useColorModeValue,
+  VStack,
+  Card,
+  CardBody,
+  Divider,
+  Link,
+} from '@chakra-ui/react';
+import { clientRegister } from '../../lib/register-service'; // Make sure this file exists
 
 export default function RegisterPage() {
   const [credentials, setCredentials] = useState({
@@ -9,105 +31,131 @@ export default function RegisterPage() {
     password: '',
     role: 'student'
   });
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
+  
+  const bgColor = useColorModeValue('white', 'gray.700');
+  const textColor = useColorModeValue('gray.800', 'white');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Validate password length
+    if (credentials.password.length < 8) {
+      setError("Password must be at least 8 characters long");
+      return;
+    }
+    
     try {
+      setLoading(true);
+      setError('');
+      
       await clientRegister(credentials);
+      
+      // Show success message or redirect
       router.push('/login');
     } catch (err) {
       setError(err.message || 'Registration failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          Create a new account
-        </h2>
-      </div>
+    <Box
+      minH="100vh"
+      bg={useColorModeValue('gray.50', 'gray.800')}
+      py={12}
+      px={{ base: 4, lg: 8 }}
+    >
+      <Container maxW="md">
+        <VStack spacing={8} align="stretch">
+          <VStack spacing={2} textAlign="center">
+            <Heading fontSize="3xl" fontWeight="bold">
+              Create a new account
+            </Heading>
+            <Text color={useColorModeValue('gray.600', 'gray.400')} fontSize="md">
+              Join our platform to access all features
+            </Text>
+          </VStack>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email address
-              </label>
-              <div className="mt-1">
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  value={credentials.email}
-                  onChange={(e) => setCredentials({...credentials, email: e.target.value})}
-                />
-              </div>
-            </div>
+          <Card bg={bgColor} boxShadow="lg" rounded="lg">
+            <CardBody>
+              <form onSubmit={handleSubmit}>
+                <Stack spacing={4}>
+                  {error && (
+                    <Alert status="error" borderRadius="md">
+                      <AlertIcon />
+                      {error}
+                    </Alert>
+                  )}
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
-              </label>
-              <div className="mt-1">
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  value={credentials.password}
-                  onChange={(e) => setCredentials({...credentials, password: e.target.value})}
-                />
-              </div>
-            </div>
+                  <FormControl id="email" isRequired>
+                    <FormLabel>Email address</FormLabel>
+                    <Input
+                      type="email"
+                      placeholder="your.email@example.com"
+                      value={credentials.email}
+                      onChange={(e) => setCredentials({...credentials, email: e.target.value})}
+                    />
+                  </FormControl>
 
-            <div>
-              <label htmlFor="role" className="block text-sm font-medium text-gray-700">
-                Account Type
-              </label>
-              <select
-                id="role"
-                name="role"
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-                value={credentials.role}
-                onChange={(e) => setCredentials({...credentials, role: e.target.value})}
+                  <FormControl id="password" isRequired>
+                    <FormLabel>Password</FormLabel>
+                    <Input
+                      type="password"
+                      placeholder="********"
+                      value={credentials.password}
+                      onChange={(e) => setCredentials({...credentials, password: e.target.value})}
+                    />
+                    <Text fontSize="xs" color="gray.500" mt={1}>
+                      Must be at least 8 characters long
+                    </Text>
+                  </FormControl>
+
+                  <FormControl id="role">
+                    <FormLabel>Account Type</FormLabel>
+                    <Select
+                      value={credentials.role}
+                      onChange={(e) => setCredentials({...credentials, role: e.target.value})}
+                    >
+                      <option value="student">Student</option>
+                      <option value="teacher">Teacher</option>
+                    </Select>
+                  </FormControl>
+
+                  <Button
+                    type="submit"
+                    colorScheme="blue"
+                    size="lg"
+                    fontSize="md"
+                    isLoading={loading}
+                    loadingText="Registering..."
+                    w="full"
+                    mt={4}
+                  >
+                    Register
+                  </Button>
+                </Stack>
+              </form>
+            </CardBody>
+          </Card>
+
+          <Box textAlign="center">
+            <Text color={useColorModeValue('gray.600', 'gray.400')}>
+              Already have an account?{' '}
+              <Link
+                color="blue.500"
+                href="/login"
+                _hover={{ textDecoration: 'underline' }}
               >
-                <option value="student">Student</option>
-                <option value="teacher">Teacher</option>
-              </select>
-            </div>
-
-            {error && (
-              <div className="text-red-600 text-sm text-center">
-                {error}
-              </div>
-            )}
-
-            <div>
-              <button
-                type="submit"
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                Register
-              </button>
-            </div>
-          </form>
-
-          <div className="mt-6 text-center text-sm text-gray-600">
-            Already have an account?{' '}
-            <a href="/login" className="font-medium text-blue-600 hover:text-blue-500">
-              Sign in here
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
+                Sign in here
+              </Link>
+            </Text>
+          </Box>
+        </VStack>
+      </Container>
+    </Box>
   );
 }
