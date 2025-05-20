@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import jwt from "jsonwebtoken"
-import { authenticateUser } from "@/lib/auth-utils" // Use your existing auth utility
+import { authenticateUser } from "../../../../lib/auth-utils" // Use your existing auth utility
 
 export async function POST(request) {
   try {

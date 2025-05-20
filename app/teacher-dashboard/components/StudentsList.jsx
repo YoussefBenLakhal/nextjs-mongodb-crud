@@ -68,24 +68,32 @@ const StudentsList = ({ classes }) => {
         url += `?${params.toString()}`
       }
 
+      console.log("[StudentsList] Fetching students from:", url)
+
       const response = await fetch(url)
+      console.log("[StudentsList] Response status:", response.status)
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
+        const errorData = await response.json().catch(() => {
+          console.error("[StudentsList] Failed to parse error response")
+          return {}
+        })
+        console.error("[StudentsList] Error response data:", errorData)
         throw new Error(errorData.error || `Failed to fetch students: ${response.status}`)
       }
 
       const data = await response.json()
+      console.log("[StudentsList] Received data with", data.students?.length || 0, "students")
 
       // Log the first student to see its structure
-      if (data.students.length > 0) {
+      if (data.students?.length > 0) {
         console.log("[StudentsList] First student structure:", data.students[0])
       }
 
       setStudents(data.students || [])
       setTotalStudents(data.total || 0)
     } catch (error) {
-      console.error("Error fetching students:", error)
+      console.error("[StudentsList] Error fetching students:", error)
       setError(`Failed to load students: ${error.message}`)
       toast({
         title: "Error",
@@ -96,6 +104,36 @@ const StudentsList = ({ classes }) => {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Add this function after the fetchStudents function
+  const checkDatabaseConnection = async () => {
+    try {
+      const response = await fetch("/api/connection-diagnostic")
+      const data = await response.json()
+
+      console.log("[StudentsList] Database connection status:", data)
+
+      toast({
+        title: data.connected ? "Database Connected" : "Database Connection Issue",
+        description: data.message || data.error,
+        status: data.connected ? "success" : "error",
+        duration: 5000,
+        isClosable: true,
+      })
+
+      return data.connected
+    } catch (error) {
+      console.error("[StudentsList] Error checking database connection:", error)
+      toast({
+        title: "Connection Check Failed",
+        description: error.message,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      })
+      return false
     }
   }
 
@@ -219,11 +257,21 @@ const StudentsList = ({ classes }) => {
           <AlertIcon />
           <Box flex="1">
             <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription display="block">
+              {error}
+              <Text fontSize="sm" mt={1}>
+                Check the browser console for more details.
+              </Text>
+            </AlertDescription>
           </Box>
-          <Button onClick={fetchStudents} leftIcon={<FaSync />} size="sm">
-            Retry
-          </Button>
+          <HStack>
+            <Button onClick={checkDatabaseConnection} size="sm" colorScheme="yellow">
+              Check DB
+            </Button>
+            <Button onClick={fetchStudents} leftIcon={<FaSync />} size="sm">
+              Retry
+            </Button>
+          </HStack>
         </Alert>
       )}
 

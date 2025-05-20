@@ -13,10 +13,19 @@ import {
   Text,
   Alert,
   AlertIcon,
+  SimpleGrid,
 } from "@chakra-ui/react"
 import GhostSubjectCleaner from "./components/GhostSubjectCleaner"
 import CacheManager from "./components/CacheManager"
 import DirectDatabaseAccess from "./components/DirectDatabaseAccess"
+import SeedAttendance from "../../components/SeedAttendance"
+import DatabaseDebugger from "./components/DatabaseDebugger"
+import ConnectionStatus from "./components/ConnectionStatus"
+import ClassDebugger from "./components/ClassDebugger"
+import SubjectsDebugger from "./components/SubjectsDebugger"
+import RemoveHardcodedSubjects from "./components/RemoveHardcodedSubjects"
+import DeleteTestSubjects from "./components/DeleteTestSubjects"
+import AssessmentDebugger from "./components/AssessmentDebugger"
 
 export default function DebugPage() {
   const [tabIndex, setTabIndex] = useState(0)
@@ -35,6 +44,20 @@ export default function DebugPage() {
           <Text>These tools provide direct access to system components. Use with caution.</Text>
         </Box>
       </Alert>
+
+      <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6} mb={8}>
+        <DatabaseDebugger />
+        <ConnectionStatus />
+        <DirectDatabaseAccess />
+        <CacheManager />
+        <ClassDebugger />
+        <SubjectsDebugger />
+        <GhostSubjectCleaner />
+        <RemoveHardcodedSubjects />
+        <DeleteTestSubjects />
+        <AssessmentDebugger />
+        <SeedAttendance />
+      </SimpleGrid>
 
       <Tabs variant="enclosed" colorScheme="purple" index={tabIndex} onChange={setTabIndex}>
         <TabList>

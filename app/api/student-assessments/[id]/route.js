@@ -1,237 +1,296 @@
 import { NextResponse } from "next/server"
-import { connectToDatabase } from "../../../../lib/mongodb"
+import { connectToDatabase } from "../../../lib/mongodb"
 import { ObjectId } from "mongodb"
 import { getSession } from "../../../../lib/server-auth"
 
-// Get a specific student assessment by ID
+// Get a specific assessment by ID
 export async function GET(request, { params }) {
   try {
-    console.log(`[API] GET /api/student-assessments/${params.id} - Fetching assessment`)
+    const { id } = params
 
-    // Get user from session
-    const user = await getSession()
-
-    if (!user) {
-      console.log("[API] No user in session")
-      return NextResponse.json({ error: "Unauthorized - No user in session" }, { status: 401 })
+    if (!id) {
+      return NextResponse.json({ error: "Assessment ID is required" }, { status: 400 })
     }
 
-    const userId = user.id
-    const userRole = user.role
+    // Get user from session or request headers
+    let user = null
+
+    // First try to get user from request headers (set by middleware)
+    let userId = request.headers.get("x-user-id")
+    const userRole = request.headers.get("x-user-role")
+    const userEmail = request.headers.get("x-user-email")
+
+    if (userId && userRole) {
+      user = {
+        id: userId,
+        role: userRole,
+        email: userEmail || "unknown",
+      }
+    } else {
+      // Fallback to session-based auth
+      user = await getSession()
+    }
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized - Please log in" }, { status: 401 })
+    }
+
+    userId = user.id
 
     const { db } = await connectToDatabase()
 
-    // Validate assessmentId
+    // Convert ID to ObjectId
     let assessmentId
     try {
-      assessmentId = new ObjectId(params.id)
+      assessmentId = new ObjectId(id)
     } catch (error) {
       return NextResponse.json({ error: "Invalid assessment ID format" }, { status: 400 })
     }
 
-    // Try to get assessment from student-assessments collection
-    let assessment = await db.collection("student-assessments").findOne({ _id: assessmentId })
-
-    // If not found, try the grades collection for backward compatibility
-    if (!assessment) {
-      assessment = await db.collection("grades").findOne({ _id: assessmentId })
-    }
+    // Find the assessment
+    const assessment = await db.collection("student-assessments").findOne({ _id: assessmentId })
 
     if (!assessment) {
       return NextResponse.json({ error: "Assessment not found" }, { status: 404 })
     }
 
-    // If user is a teacher, verify they teach this subject
-    if (userRole === "teacher") {
-      const subject = await db.collection("subjects").findOne({ _id: assessment.subjectId })
+    // Check permissions
+    if (user.role === "student" && assessment.studentId.toString() !== userId) {
+      return NextResponse.json({ error: "Unauthorized - You can only view your own assessments" }, { status: 401 })
+    }
 
-      if (!subject || subject.teacherId.toString() !== userId) {
+    if (user.role === "teacher") {
+      // Check if teacher teaches this subject
+      const subject = await db.collection("subjects").findOne({
+        _id: assessment.subjectId,
+        teacherId: new ObjectId(userId),
+      })
+
+      if (!subject) {
         return NextResponse.json(
-          { error: "Unauthorized - You can only view assessments for subjects you teach" },
+          {
+            error: "Unauthorized - You can only view assessments for subjects you teach",
+          },
           { status: 401 },
         )
       }
     }
 
-    // If user is a student, verify the assessment belongs to them
-    if (userRole === "student" && assessment.studentId.toString() !== userId) {
-      return NextResponse.json({ error: "Unauthorized - You can only view your own assessments" }, { status: 401 })
-    }
+    // Convert ObjectIds to strings
+    const serialized = { ...assessment }
+    if (assessment._id) serialized._id = assessment._id.toString()
+    if (assessment.studentId) serialized.studentId = assessment.studentId.toString()
+    if (assessment.subjectId) serialized.subjectId = assessment.subjectId.toString()
+    if (assessment.createdBy) serialized.createdBy = assessment.createdBy.toString()
 
-    // Convert ObjectIds to strings for JSON serialization
-    const serializedAssessment = {
-      ...assessment,
-      _id: assessment._id.toString(),
-      studentId: assessment.studentId.toString(),
-      subjectId: assessment.subjectId.toString(),
-      ...(assessment.createdBy && { createdBy: assessment.createdBy.toString() }),
-      ...(assessment.updatedBy && { updatedBy: assessment.updatedBy.toString() }),
-    }
-
-    return NextResponse.json({ assessment: serializedAssessment })
+    return NextResponse.json({ assessment: serialized })
   } catch (error) {
-    console.error("[API] Student assessment GET error:", error)
+    console.error("[API] Get assessment by ID error:", error)
     return NextResponse.json({ error: "Internal server error", details: error.message }, { status: 500 })
   }
 }
 
-// Update a student assessment
+// Update an assessment
 export async function PUT(request, { params }) {
   try {
-    console.log(`[API] PUT /api/student-assessments/${params.id} - Updating assessment`)
+    const { id } = params
 
-    // Get user from session
-    const user = await getSession()
-
-    if (!user) {
-      console.log("[API] No user in session")
-      return NextResponse.json({ error: "Unauthorized - No user in session" }, { status: 401 })
+    if (!id) {
+      return NextResponse.json({ error: "Assessment ID is required" }, { status: 400 })
     }
 
-    const userId = user.id
-    const userRole = user.role
+    // Get user from session or request headers
+    let user = null
 
-    if (userRole !== "teacher" && userRole !== "admin") {
+    // First try to get user from request headers (set by middleware)
+    let userId = request.headers.get("x-user-id")
+    const userRole = request.headers.get("x-user-role")
+    const userEmail = request.headers.get("x-user-email")
+
+    if (userId && userRole) {
+      user = {
+        id: userId,
+        role: userRole,
+        email: userEmail || "unknown",
+      }
+    } else {
+      // Fallback to session-based auth
+      user = await getSession()
+    }
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized - Please log in" }, { status: 401 })
+    }
+
+    userId = user.id
+
+    if (user.role !== "teacher" && user.role !== "admin") {
       return NextResponse.json(
-        { error: "Unauthorized - Only teachers and admins can update assessments" },
+        {
+          error: "Unauthorized - Only teachers and admins can update assessments",
+        },
         { status: 401 },
       )
     }
 
+    const body = await request.json()
+    const { score, maxScore, title, weight, date, comment } = body
+
     const { db } = await connectToDatabase()
 
-    // Validate assessmentId
+    // Convert ID to ObjectId
     let assessmentId
     try {
-      assessmentId = new ObjectId(params.id)
+      assessmentId = new ObjectId(id)
     } catch (error) {
       return NextResponse.json({ error: "Invalid assessment ID format" }, { status: 400 })
     }
 
-    // Try to get assessment from student-assessments collection
-    let existingAssessment = await db.collection("student-assessments").findOne({ _id: assessmentId })
-    let collectionName = "student-assessments"
+    // Find the assessment
+    const assessment = await db.collection("student-assessments").findOne({ _id: assessmentId })
 
-    // If not found, try the grades collection for backward compatibility
-    if (!existingAssessment) {
-      existingAssessment = await db.collection("grades").findOne({ _id: assessmentId })
-      collectionName = "grades"
-    }
-
-    if (!existingAssessment) {
+    if (!assessment) {
       return NextResponse.json({ error: "Assessment not found" }, { status: 404 })
     }
 
-    // If user is a teacher, verify they teach this subject
-    if (userRole === "teacher") {
-      const subject = await db.collection("subjects").findOne({ _id: existingAssessment.subjectId })
+    if (user.role === "teacher") {
+      // Check if teacher teaches this subject
+      const subject = await db.collection("subjects").findOne({
+        _id: assessment.subjectId,
+        teacherId: new ObjectId(userId),
+      })
 
-      if (!subject || subject.teacherId.toString() !== userId) {
+      if (!subject) {
         return NextResponse.json(
-          { error: "Unauthorized - You can only update assessments for subjects you teach" },
+          {
+            error: "Unauthorized - You can only update assessments for subjects you teach",
+          },
           { status: 401 },
         )
       }
     }
 
-    const body = await request.json()
-    const { title, score, maxScore, weight, date, comment } = body
-
-    // Create update object with only provided fields
+    // Build update object
     const updateData = {}
-
-    if (title !== undefined) updateData.title = title
-    if (score !== undefined) updateData.score = Number.parseFloat(score)
-    if (maxScore !== undefined) updateData.maxScore = Number.parseFloat(maxScore)
-    if (weight !== undefined) updateData.weight = Number.parseFloat(weight)
-    if (date !== undefined) updateData.date = new Date(date)
+    if (score !== undefined) updateData.score = Number(score)
+    if (maxScore !== undefined) updateData.maxScore = Number(maxScore)
+    if (title) updateData.title = title
+    if (weight !== undefined) updateData.weight = Number(weight)
+    if (date) updateData.date = new Date(date)
     if (comment !== undefined) updateData.comment = comment
 
-    // Add metadata
+    // Add update metadata
     updateData.updatedAt = new Date()
     updateData.updatedBy = new ObjectId(userId)
 
-    // Update assessment
-    await db.collection(collectionName).updateOne({ _id: assessmentId }, { $set: updateData })
+    // Update the assessment
+    const result = await db.collection("student-assessments").updateOne({ _id: assessmentId }, { $set: updateData })
+
+    if (result.matchedCount === 0) {
+      return NextResponse.json({ error: "Assessment not found" }, { status: 404 })
+    }
 
     return NextResponse.json({
       success: true,
       message: "Assessment updated successfully",
+      modifiedCount: result.modifiedCount,
     })
   } catch (error) {
-    console.error("[API] Student assessment PUT error:", error)
+    console.error("[API] Update assessment error:", error)
     return NextResponse.json({ error: "Internal server error", details: error.message }, { status: 500 })
   }
 }
 
-// Delete a student assessment
+// Delete an assessment
 export async function DELETE(request, { params }) {
   try {
-    console.log(`[API] DELETE /api/student-assessments/${params.id} - Deleting assessment`)
+    const { id } = params
 
-    // Get user from session
-    const user = await getSession()
-
-    if (!user) {
-      console.log("[API] No user in session")
-      return NextResponse.json({ error: "Unauthorized - No user in session" }, { status: 401 })
+    if (!id) {
+      return NextResponse.json({ error: "Assessment ID is required" }, { status: 400 })
     }
 
-    const userId = user.id
-    const userRole = user.role
+    // Get user from session or request headers
+    let user = null
 
-    if (userRole !== "teacher" && userRole !== "admin") {
+    // First try to get user from request headers (set by middleware)
+    let userId = request.headers.get("x-user-id")
+    const userRole = request.headers.get("x-user-role")
+    const userEmail = request.headers.get("x-user-email")
+
+    if (userId && userRole) {
+      user = {
+        id: userId,
+        role: userRole,
+        email: userEmail || "unknown",
+      }
+    } else {
+      // Fallback to session-based auth
+      user = await getSession()
+    }
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized - Please log in" }, { status: 401 })
+    }
+
+    userId = user.id
+
+    if (user.role !== "teacher" && user.role !== "admin") {
       return NextResponse.json(
-        { error: "Unauthorized - Only teachers and admins can delete assessments" },
+        {
+          error: "Unauthorized - Only teachers and admins can delete assessments",
+        },
         { status: 401 },
       )
     }
 
     const { db } = await connectToDatabase()
 
-    // Validate assessmentId
+    // Convert ID to ObjectId
     let assessmentId
     try {
-      assessmentId = new ObjectId(params.id)
+      assessmentId = new ObjectId(id)
     } catch (error) {
       return NextResponse.json({ error: "Invalid assessment ID format" }, { status: 400 })
     }
 
-    // Try to get assessment from student-assessments collection
-    let existingAssessment = await db.collection("student-assessments").findOne({ _id: assessmentId })
-    let collectionName = "student-assessments"
+    // Find the assessment first to check permissions
+    const assessment = await db.collection("student-assessments").findOne({ _id: assessmentId })
 
-    // If not found, try the grades collection for backward compatibility
-    if (!existingAssessment) {
-      existingAssessment = await db.collection("grades").findOne({ _id: assessmentId })
-      collectionName = "grades"
-    }
-
-    if (!existingAssessment) {
+    if (!assessment) {
       return NextResponse.json({ error: "Assessment not found" }, { status: 404 })
     }
 
-    // If user is a teacher, verify they teach this subject
-    if (userRole === "teacher") {
-      const subject = await db.collection("subjects").findOne({ _id: existingAssessment.subjectId })
+    if (user.role === "teacher") {
+      // Check if teacher teaches this subject
+      const subject = await db.collection("subjects").findOne({
+        _id: assessment.subjectId,
+        teacherId: new ObjectId(userId),
+      })
 
-      if (!subject || subject.teacherId.toString() !== userId) {
+      if (!subject) {
         return NextResponse.json(
-          { error: "Unauthorized - You can only delete assessments for subjects you teach" },
+          {
+            error: "Unauthorized - You can only delete assessments for subjects you teach",
+          },
           { status: 401 },
         )
       }
     }
 
-    // Delete assessment
-    await db.collection(collectionName).deleteOne({ _id: assessmentId })
+    // Delete the assessment
+    const result = await db.collection("student-assessments").deleteOne({ _id: assessmentId })
+
+    if (result.deletedCount === 0) {
+      return NextResponse.json({ error: "Assessment not found or already deleted" }, { status: 404 })
+    }
 
     return NextResponse.json({
       success: true,
       message: "Assessment deleted successfully",
     })
   } catch (error) {
-    console.error("[API] Student assessment DELETE error:", error)
+    console.error("[API] Delete assessment error:", error)
     return NextResponse.json({ error: "Internal server error", details: error.message }, { status: 500 })
   }
 }

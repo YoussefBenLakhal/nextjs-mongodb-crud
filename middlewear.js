@@ -19,6 +19,8 @@ export function middleware(request) {
     "/api/auth/register",
     "/api/auth/session",
     "/api/test-session",
+    "/api/subjects", // Add public subjects endpoint to public paths
+    "/api/seed-subjects", // Add seed subjects endpoint to public paths
     "/unauthorized", // Add this to prevent redirect loops
   ]
 
@@ -51,24 +53,20 @@ export function middleware(request) {
       try {
         // Verify token
         const decoded = jwt.verify(token, process.env.JWT_SECRET)
-        console.log("[Middleware] Token verified for user:", decoded.email, "role:", decoded.role, "id:", decoded.id)
 
-        // Create a new response
-        const response = NextResponse.next()
-        
-        // Add user info to request headers for the API route
-        response.headers.set("x-user-id", decoded.id)
-        response.headers.set("x-user-role", decoded.role)
-        response.headers.set("x-user-email", decoded.email)
+        // Add user info to headers
+        const requestHeaders = new Headers(request.headers)
+        requestHeaders.set("x-user-id", decoded.id)
+        requestHeaders.set("x-user-role", decoded.role)
+        requestHeaders.set("x-user-email", decoded.email)
 
-        // Log the headers to verify they're being set
-        console.log("[Middleware] Set user headers:", {
-          id: decoded.id,
-          role: decoded.role,
-          email: decoded.email,
+        // Return the modified request
+        return NextResponse.next({
+          request: {
+            ...request,
+            headers: requestHeaders,
+          },
         })
-
-        return response
       } catch (jwtError) {
         console.error("[Middleware] JWT verification error:", jwtError.message)
         throw new Error(`Invalid token: ${jwtError.message}`)

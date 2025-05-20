@@ -1,25 +1,40 @@
 import { NextResponse } from "next/server"
-import { connectToDatabase } from "../../../../lib/mongodb"
+import { connectToDatabase } from "../../../lib/mongodb"
 import { ObjectId } from "mongodb"
 import { getSession } from "../../../../lib/server-auth"
 
-// Bulk create student assessments
+// Create multiple student assessments in bulk
 export async function POST(request) {
   try {
-    console.log("[API] POST /api/student-assessments/bulk - Creating multiple assessments")
+    console.log("[API] POST /api/student-assessments/bulk - Creating assessments in bulk")
 
-    // Get user from session
-    const user = await getSession()
+    // Get user from session or request headers
+    let user = null
+
+    // First try to get user from request headers (set by middleware)
+    let userId = request.headers.get("x-user-id")
+    const userRole = request.headers.get("x-user-role")
+    const userEmail = request.headers.get("x-user-email")
+
+    if (userId && userRole) {
+      user = {
+        id: userId,
+        role: userRole,
+        email: userEmail || "unknown",
+      }
+    } else {
+      // Fallback to session-based auth
+      user = await getSession()
+    }
 
     if (!user) {
       console.log("[API] No user in session")
-      return NextResponse.json({ error: "Unauthorized - No user in session" }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized - Please log in" }, { status: 401 })
     }
 
-    const userId = user.id
-    const userRole = user.role
+    userId = user.id
 
-    if (userRole !== "teacher" && userRole !== "admin") {
+    if (user.role !== "teacher" && user.role !== "admin") {
       return NextResponse.json(
         { error: "Unauthorized - Only teachers and admins can create assessments" },
         { status: 401 },
@@ -29,11 +44,15 @@ export async function POST(request) {
     const body = await request.json()
     const { subjectId, title, maxScore, weight, date, assessments } = body
 
-    if (!subjectId || !title || maxScore === undefined || !Array.isArray(assessments) || assessments.length === 0) {
+    if (!subjectId || !title || maxScore === undefined || !assessments || !Array.isArray(assessments)) {
       return NextResponse.json(
         { error: "Subject ID, title, max score, and assessments array are required" },
         { status: 400 },
       )
+    }
+
+    if (assessments.length === 0) {
+      return NextResponse.json({ error: "Assessments array cannot be empty" }, { status: 400 })
     }
 
     const { db } = await connectToDatabase()
@@ -53,7 +72,7 @@ export async function POST(request) {
     }
 
     // If user is a teacher, verify they teach this subject
-    if (userRole === "teacher" && subject.teacherId.toString() !== userId) {
+    if (user.role === "teacher" && subject.teacherId.toString() !== userId) {
       return NextResponse.json(
         { error: "Unauthorized - You can only create assessments for subjects you teach" },
         { status: 401 },
@@ -71,11 +90,7 @@ export async function POST(request) {
         const { studentId, score, comment } = assessment
 
         if (!studentId || score === undefined) {
-          results.failed.push({
-            studentId,
-            error: "Student ID and score are required",
-          })
-          continue
+          throw new Error("Student ID and score are required for each assessment")
         }
 
         // Validate studentId
@@ -83,21 +98,13 @@ export async function POST(request) {
         try {
           studentObjectId = new ObjectId(studentId)
         } catch (error) {
-          results.failed.push({
-            studentId,
-            error: "Invalid student ID format",
-          })
-          continue
+          throw new Error(`Invalid student ID format: ${studentId}`)
         }
 
         // Check if student exists
         const student = await db.collection("students").findOne({ _id: studentObjectId })
         if (!student) {
-          results.failed.push({
-            studentId,
-            error: "Student not found",
-          })
-          continue
+          throw new Error(`Student not found: ${studentId}`)
         }
 
         // Create assessment
@@ -121,7 +128,7 @@ export async function POST(request) {
           assessmentId: result.insertedId.toString(),
         })
       } catch (error) {
-        console.error("[API] Bulk assessment creation error for student:", assessment.studentId, error)
+        console.error(`[API] Error creating assessment for student ${assessment.studentId}:`, error)
         results.failed.push({
           studentId: assessment.studentId,
           error: error.message,
@@ -131,11 +138,11 @@ export async function POST(request) {
 
     return NextResponse.json({
       success: true,
-      message: `Created ${results.success.length} assessments successfully. Failed: ${results.failed.length}`,
+      message: `Created ${results.success.length} assessments, failed ${results.failed.length}`,
       results,
     })
   } catch (error) {
-    console.error("[API] Bulk assessments POST error:", error)
+    console.error("[API] Bulk student assessment POST error:", error)
     return NextResponse.json({ error: "Internal server error", details: error.message }, { status: 500 })
   }
 }

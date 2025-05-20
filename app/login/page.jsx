@@ -15,7 +15,7 @@ import {
   AlertIcon,
   useToast,
 } from "@chakra-ui/react"
-import { clientLogin } from "@/lib/client-auth"
+import { clientLogin } from "../../lib/client-auth"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")

@@ -1,16 +1,8 @@
 {
-    "compilerOptions": {
-      "baseUrl": ".",
-      "paths": {
-        "@/*": ["./*"]
-      },
-      "allowJs": true,
-      "checkJs": false,
-      "skipLibCheck": true,
-      "module": "esnext",
-      "moduleResolution": "node",
-      "lib": ["esnext", "dom"],
-      "typeRoots": ["./types"] // Create empty types directory
-    },
-    "exclude": ["node_modules"]
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    }
   }
+}

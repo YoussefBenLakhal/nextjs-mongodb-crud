@@ -101,7 +101,7 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
   // Fetch assessments when selected subject changes
   useEffect(() => {
     if (selectedSubject && selectedClass) {
-      fetchAssessments(selectedSubject, selectedClass)
+      fetchAssessments({ subjectId: selectedSubject, classId: selectedClass })
     } else {
       setAssessments([])
     }
@@ -154,65 +154,43 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
   }
 
   // Fetch assessments for a subject
-  const fetchAssessments = async (subjectId, classId) => {
+  const fetchAssessments = async (filters = {}) => {
     setLoading((prev) => ({ ...prev, assessments: true }))
     setError(null)
 
     try {
+      // Build query string from filters
+      const queryParams = new URLSearchParams()
+      if (filters.studentId) queryParams.set("studentId", filters.studentId)
+      if (filters.subjectId) queryParams.set("subjectId", filters.subjectId)
+      if (filters.classId) queryParams.set("classId", filters.classId)
+
       // Add timestamp to prevent caching
-      const timestamp = new Date().getTime()
-      const url = `/api/student-assessments?subjectId=${subjectId}&classId=${classId}&_t=${timestamp}`
+      queryParams.set("_t", Date.now())
+
+      const url = `/api/student-assessments?${queryParams.toString()}`
       console.log("[AssessmentManager] Fetching assessments from URL:", url)
       setDebugInfo((prev) => ({ ...prev, requestUrl: url }))
 
       const response = await fetch(url, {
         method: "GET",
-        headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
-        cache: "no-store",
+        credentials: "include", // Important: include cookies with the request
+        headers: {
+          "Content-Type": "application/json",
+        },
       })
-
-      // Get the raw response text for debugging
-      const responseText = await response.text()
-      console.log("[AssessmentManager] Raw response text:", responseText)
-
-      // Try to parse the JSON
-      let data
-      try {
-        data = JSON.parse(responseText)
-        setDebugInfo((prev) => ({ ...prev, apiResponse: data }))
-      } catch (e) {
-        console.error("[AssessmentManager] Failed to parse JSON response:", e)
-        setError(`Failed to parse API response: ${e.message}. Raw response: ${responseText.substring(0, 100)}...`)
-        setLoading((prev) => ({ ...prev, assessments: false }))
-        return
-      }
-
-      console.log("[AssessmentManager] Parsed response:", data)
 
       if (!response.ok) {
-        throw new Error(data.error || `API returned status ${response.status}`)
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to load assessments")
       }
 
-      // Use assessments array if present
-      const assessmentsData = data.assessments || []
-      console.log(`[AssessmentManager] Fetched ${assessmentsData.length} assessments`)
-
-      // Check if we have data and they have the expected structure
-      if (assessmentsData.length > 0) {
-        console.log("[AssessmentManager] Sample assessment:", assessmentsData[0])
-      }
-
-      setAssessments(assessmentsData)
+      const data = await response.json()
+      setDebugInfo((prev) => ({ ...prev, apiResponse: data }))
+      setAssessments(data.assessments || [])
     } catch (error) {
       console.error("[AssessmentManager] Error fetching assessments:", error)
-      setError(`Failed to load assessments: ${error.message}`)
-      toast({
-        title: "Error",
-        description: `Failed to load assessments: ${error.message}`,
-        status: "error",
-        duration: 3000,
-        isClosable: true,
-      })
+      setError(error.message)
     } finally {
       setLoading((prev) => ({ ...prev, assessments: false }))
     }
@@ -269,200 +247,73 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
       // Create assessments using the student-assessments API endpoint
       console.log("[AssessmentManager] Creating assessments using student-assessments API")
 
-      // First, try the bulk endpoint for efficiency
-      try {
-        const bulkPayload = {
-          subjectId: selectedSubject,
-          title: formData.title,
-          maxScore: Number(formData.maxScore),
-          weight: Number(formData.weight),
-          date: formData.date,
-          assessments: validAssessments.map((assessment) => ({
-            studentId: assessment.studentId,
-            score: Number(assessment.score),
-            comment: assessment.comment || "",
-          })),
-        }
-
-        console.log("[AssessmentManager] Bulk submission payload:", bulkPayload)
-
-        setDebugInfo((prev) => ({
-          ...prev,
-          submissionData: {
-            endpoint: "/api/student-assessments/bulk",
-            payload: bulkPayload,
-          },
-        }))
-
-        const bulkResponse = await fetch("/api/student-assessments/bulk", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(bulkPayload),
-        })
-
-        const bulkResponseText = await bulkResponse.text()
-        let bulkData
-
-        try {
-          bulkData = JSON.parse(bulkResponseText)
-        } catch (e) {
-          console.error("[AssessmentManager] Failed to parse bulk response:", bulkResponseText)
-          throw new Error(`Invalid bulk response: ${bulkResponseText.substring(0, 100)}...`)
-        }
-
-        if (bulkResponse.ok) {
-          console.log("[AssessmentManager] Bulk creation successful:", bulkData)
-
-          setDebugInfo((prev) => ({
-            ...prev,
-            submissionResults: bulkData.results,
-          }))
-
-          toast({
-            title: "Assessments submitted",
-            description: `Successfully submitted ${bulkData.results.success.length} assessments. ${
-              bulkData.results.failed.length > 0 ? `Failed: ${bulkData.results.failed.length}` : ""
-            }`,
-            status: bulkData.results.failed.length === 0 ? "success" : "warning",
-            duration: 5000,
-            isClosable: true,
-          })
-
-          // Reset form
-          setFormData({
-            title: "",
-            maxScore: 100,
-            weight: 1,
-            date: new Date().toISOString().split("T")[0],
-            studentAssessments: students.map((student) => ({
-              studentId: student._id,
-              name: student.name,
-              score: "",
-              comment: "",
-            })),
-          })
-          onClose()
-
-          // Refresh assessments after a short delay
-          setTimeout(() => {
-            fetchAssessments(selectedSubject, selectedClass)
-          }, 1000)
-
-          return
-        } else {
-          console.warn("[AssessmentManager] Bulk creation failed:", bulkData)
-          throw new Error(bulkData.error || "Bulk creation failed")
-        }
-      } catch (bulkError) {
-        console.error("[AssessmentManager] Error with bulk creation:", bulkError)
-        setError(`Bulk submission failed: ${bulkError.message}. Trying individual submissions...`)
-        // Continue to individual creation as fallback
+      // Use the main endpoint with bulk data
+      const bulkPayload = {
+        subjectId: selectedSubject,
+        title: formData.title,
+        maxScore: Number(formData.maxScore),
+        weight: Number(formData.weight),
+        date: formData.date,
+        assessments: validAssessments.map((assessment) => ({
+          studentId: assessment.studentId,
+          score: Number(assessment.score),
+          comment: assessment.comment || "",
+        })),
       }
 
-      // Individual creation fallback
-      const results = {
-        success: [],
-        failed: [],
-      }
+      console.log("[AssessmentManager] Bulk submission payload:", bulkPayload)
 
-      // Set detailed debug info
       setDebugInfo((prev) => ({
         ...prev,
         submissionData: {
           endpoint: "/api/student-assessments",
-          payload: {
-            title: formData.title,
-            maxScore: Number(formData.maxScore),
-            weight: Number(formData.weight),
-            date: formData.date,
-            sampleAssessment:
-              validAssessments.length > 0
-                ? {
-                    studentId: validAssessments[0].studentId,
-                    score: Number(validAssessments[0].score),
-                    comment: validAssessments[0].comment || "",
-                  }
-                : null,
-          },
+          payload: bulkPayload,
         },
       }))
 
-      for (const assessment of validAssessments) {
-        try {
-          console.log(`[AssessmentManager] Creating assessment for student: ${assessment.studentId}`)
-
-          const payload = {
-            title: formData.title,
-            score: Number(assessment.score),
-            maxScore: Number(formData.maxScore),
-            weight: Number(formData.weight),
-            date: formData.date,
-            comment: assessment.comment || "",
-            studentId: assessment.studentId,
-            subjectId: selectedSubject,
-          }
-
-          console.log("[AssessmentManager] Individual submission payload:", payload)
-
-          const response = await fetch("/api/student-assessments", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          })
-
-          const responseText = await response.text()
-          let data
-
-          try {
-            data = JSON.parse(responseText)
-          } catch (e) {
-            console.error("[AssessmentManager] Failed to parse response:", responseText)
-            throw new Error(`Invalid response: ${responseText.substring(0, 100)}...`)
-          }
-
-          if (!response.ok) {
-            throw new Error(data.error || `API returned status ${response.status}`)
-          }
-
-          results.success.push({
-            studentId: assessment.studentId,
-            name: assessment.name,
-            assessmentId: data.assessmentId,
-          })
-        } catch (error) {
-          console.error(`[AssessmentManager] Error creating assessment for student ${assessment.studentId}:`, error)
-          results.failed.push({
-            studentId: assessment.studentId,
-            name: assessment.name,
-            error: error.message,
-          })
-        }
-      }
-
-      // Update debug info with results
-      setDebugInfo((prev) => ({
-        ...prev,
-        submissionResults: results,
-      }))
-
-      console.log("[AssessmentManager] Assessment creation results:", results)
-
-      toast({
-        title: "Assessments submitted",
-        description: `Successfully submitted ${results.success.length} assessments. ${
-          results.failed.length > 0 ? `Failed: ${results.failed.length}` : ""
-        }`,
-        status: results.failed.length === 0 ? "success" : "warning",
-        duration: 5000,
-        isClosable: true,
+      const bulkResponse = await fetch("/api/student-assessments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bulkPayload),
+        credentials: "include", // Ensure cookies are sent with the request
       })
 
-      if (results.failed.length > 0) {
-        setError(`Failed to submit some assessments: ${results.failed.map((f) => `${f.name}: ${f.error}`).join("; ")}`)
+      // Check for authentication errors
+      if (bulkResponse.status === 401) {
+        console.error("[AssessmentManager] Authentication error: Not authorized")
+        setError("Authentication error: You are not logged in or your session has expired. Please log in again.")
+        throw new Error("Unauthorized - Please log in")
       }
 
-      // Reset form if at least some were successful
-      if (results.success.length > 0) {
+      const bulkResponseText = await bulkResponse.text()
+      let bulkData
+
+      try {
+        bulkData = JSON.parse(bulkResponseText)
+      } catch (e) {
+        console.error("[AssessmentManager] Failed to parse bulk response:", bulkResponseText)
+        throw new Error(`Invalid bulk response: ${bulkResponseText.substring(0, 100)}...`)
+      }
+
+      if (bulkResponse.ok) {
+        console.log("[AssessmentManager] Bulk creation successful:", bulkData)
+
+        setDebugInfo((prev) => ({
+          ...prev,
+          submissionResults: bulkData.results,
+        }))
+
+        toast({
+          title: "Assessments submitted",
+          description: `Successfully submitted ${bulkData.results.success.length} assessments. ${
+            bulkData.results.failed.length > 0 ? `Failed: ${bulkData.results.failed.length}` : ""
+          }`,
+          status: bulkData.results.failed.length === 0 ? "success" : "warning",
+          duration: 5000,
+          isClosable: true,
+        })
+
+        // Reset form
         setFormData({
           title: "",
           maxScore: 100,
@@ -476,12 +327,17 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
           })),
         })
         onClose()
-      }
 
-      // Refresh assessments after a short delay
-      setTimeout(() => {
-        fetchAssessments(selectedSubject, selectedClass)
-      }, 1000)
+        // Refresh assessments after a short delay
+        setTimeout(() => {
+          fetchAssessments({ subjectId: selectedSubject, classId: selectedClass })
+        }, 1000)
+
+        return
+      } else {
+        console.warn("[AssessmentManager] Bulk creation failed:", bulkData)
+        throw new Error(bulkData.error || "Bulk creation failed")
+      }
     } catch (error) {
       console.error("[AssessmentManager] Error submitting assessments:", error)
       setError(`Failed to submit assessments: ${error.message}`)
@@ -545,9 +401,10 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
     try {
       console.log(`[AssessmentManager] Deleting assessment: ${assessmentId}`)
 
-      const response = await fetch(`/api/student-assessments/${assessmentId}`, {
+      const response = await fetch(`/api/student-assessments?id=${assessmentId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
+        credentials: "include", // Ensure cookies are sent with the request
       })
 
       if (!response.ok) {
@@ -564,7 +421,7 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
       })
 
       // Refresh assessments
-      fetchAssessments(selectedSubject, selectedClass)
+      fetchAssessments({ subjectId: selectedSubject, classId: selectedClass })
     } catch (error) {
       console.error("[AssessmentManager] Error deleting assessment:", error)
       toast({
@@ -615,7 +472,8 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
             leftIcon={<FaSync />}
             colorScheme="gray"
             onClick={() => {
-              if (selectedSubject && selectedClass) fetchAssessments(selectedSubject, selectedClass)
+              if (selectedSubject && selectedClass)
+                fetchAssessments({ subjectId: selectedSubject, classId: selectedClass })
               if (selectedClass) fetchStudents(selectedClass)
             }}
             isLoading={loading.assessments || loading.students}
