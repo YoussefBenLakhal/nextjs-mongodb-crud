@@ -9,25 +9,25 @@ async function connectToDatabase() {
     await client.connect()
     // FIXED: Always use ProjetClasse, not school_management
     db = client.db(process.env.MONGODB_DB || "ProjetClasse")
-    console.log(`[USER MODEL] Connected to database: ${db.databaseName}`)
+    console.log(`[ATTENDANCE MODEL] Connected to database: ${db.databaseName}`)
   }
   return { client, db }
 }
 
-export class User {
+export class Attendance {
   static async find(query = {}) {
     const { db } = await connectToDatabase()
-    return await db.collection("users").find(query).toArray()
+    return await db.collection("attendances").find(query).toArray()
   }
 
   static async findOne(query) {
     const { db } = await connectToDatabase()
-    return await db.collection("users").findOne(query)
+    return await db.collection("attendances").findOne(query)
   }
 
   static async create(data) {
     const { db } = await connectToDatabase()
-    const result = await db.collection("users").insertOne({
+    const result = await db.collection("attendances").insertOne({
       ...data,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -37,7 +37,7 @@ export class User {
 
   static async updateOne(query, update) {
     const { db } = await connectToDatabase()
-    return await db.collection("users").updateOne(query, {
+    return await db.collection("attendances").updateOne(query, {
       ...update,
       $set: { ...update.$set, updatedAt: new Date() },
     })
@@ -45,8 +45,13 @@ export class User {
 
   static async deleteOne(query) {
     const { db } = await connectToDatabase()
-    return await db.collection("users").deleteOne(query)
+    return await db.collection("attendances").deleteOne(query)
+  }
+
+  static async aggregate(pipeline) {
+    const { db } = await connectToDatabase()
+    return await db.collection("attendances").aggregate(pipeline).toArray()
   }
 }
 
-export default User
+export default Attendance

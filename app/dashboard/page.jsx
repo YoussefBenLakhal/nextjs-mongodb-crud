@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Box, Heading, Text, Button, Spinner, Center, Alert, AlertIcon } from "@chakra-ui/react"
-import { checkSession } from "@/lib/client-auth"
+import { checkSession } from "../../lib/client-auth"
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true)

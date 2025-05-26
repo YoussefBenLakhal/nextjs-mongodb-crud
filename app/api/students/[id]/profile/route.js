@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { getSession } from "../../../../lib/server-auth"
-import { connectToDatabase } from "../../../../lib/mongodb"
+import { getSession } from "../../../../../lib/server-auth"
+import { connectToDatabase } from "../../../../../lib/mongodb"
 import { ObjectId } from "mongodb"
 
 // Get a student's profile

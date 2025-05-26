@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getSession } from "../../lib/server-auth.js"
+import { getSession } from "../../../lib/server-auth.js"
 
 export async function GET() {
   try {

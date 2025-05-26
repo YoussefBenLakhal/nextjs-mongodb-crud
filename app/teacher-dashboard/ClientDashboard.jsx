@@ -59,7 +59,7 @@ export default function ClientDashboard({ user }) {
   const [loading, setLoading] = useState({
     classes: true,
     students: false,
-    subjects: false, // Start with false to prevent immediate loading indicator
+    subjects: false,
     connectionTest: false,
     logout: false,
   })
@@ -94,6 +94,9 @@ export default function ClientDashboard({ user }) {
       if (!response.ok) {
         throw new Error("Logout failed")
       }
+
+      // Clear localStorage
+      localStorage.removeItem("authToken")
 
       toast({
         title: "Logged out successfully",

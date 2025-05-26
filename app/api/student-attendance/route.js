@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import connectToDB from "@/lib/db";
-import Attendance from "@/models/Attendance";
+import { authOptions } from "./../../../lib/auth";
+import { connectToDatabase } from './../../../lib/mongodb';
+import Attendance from "../../../models/Attendance";
 
 export default async function handler(req, res) {
   const session = await getServerSession(req, res, authOptions);

@@ -1,35 +1,24 @@
 import { NextResponse } from "next/server"
-import { cookies } from "next/headers"
 
 export async function POST() {
   try {
-    console.log("[LOGOUT-API] Processing logout request")
+    console.log("[AUTH-LOGOUT] Processing logout...")
 
-    // Clear the session cookie
-    const cookieStore = cookies()
-    cookieStore.set({
-      name: "session",
-      value: "",
-      expires: new Date(0),
+    const response = NextResponse.json({ message: "Logged out successfully" })
+
+    // Clear the auth cookie
+    response.cookies.set("authToken", "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 0,
       path: "/",
     })
 
-    // Clear the user_info cookie
-    cookieStore.set({
-      name: "user_info",
-      value: "",
-      expires: new Date(0),
-      path: "/",
-    })
-
-    console.log("[LOGOUT-API] Cookies cleared successfully")
-
-    return NextResponse.json({ success: true })
+    console.log("[AUTH-LOGOUT] Logout successful")
+    return response
   } catch (error) {
-    console.error("[LOGOUT-API] Logout API error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("[AUTH-LOGOUT] Logout error:", error)
+    return NextResponse.json({ error: "Logout failed" }, { status: 500 })
   }
 }
-
-// Ensure this route is not cached
-export const dynamic = "force-dynamic"

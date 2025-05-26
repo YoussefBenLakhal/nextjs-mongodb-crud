@@ -1,44 +1,36 @@
 import { NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import jwt from "jsonwebtoken"
+import { getServerSession } from "next-auth"
+import { authOptions } from "../[...nextauth]/route"
 
-export async function GET(request) {
+export async function GET() {
   try {
-    console.log("[SESSION-API] Checking session")
+    console.log("Session API - Checking session...")
 
-    // Get the session cookie
-    const cookieStore = cookies()
-    const sessionCookie = cookieStore.get("session")
+    const session = await getServerSession(authOptions)
 
-    if (!sessionCookie) {
-      console.log("[SESSION-API] No session cookie found")
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
+    if (!session) {
+      console.log("Session API - No session found")
+      return NextResponse.json({ user: null }, { status: 200 })
     }
 
-    try {
-      // Verify the JWT token
-      const decoded = jwt.verify(sessionCookie.value, process.env.JWT_SECRET)
+    console.log("Session API - Session found:", {
+      email: session.user?.email,
+      role: session.user?.role,
+    })
 
-      console.log("[SESSION-API] JWT verified for user:", decoded.email)
-
-      // Return user data
-      return NextResponse.json({
+    return NextResponse.json(
+      {
         user: {
-          id: decoded.id,
-          name: decoded.name,
-          email: decoded.email,
-          role: decoded.role,
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.name,
+          role: session.user.role,
         },
-      })
-    } catch (error) {
-      console.error("[SESSION-API] JWT verification error:", error)
-      return NextResponse.json({ error: "Invalid session" }, { status: 401 })
-    }
+      },
+      { status: 200 },
+    )
   } catch (error) {
-    console.error("[SESSION-API] Session API error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error("Session API - Error:", error)
+    return NextResponse.json({ error: "Failed to get session" }, { status: 500 })
   }
 }
-
-// Ensure this route is not cached
-export const dynamic = "force-dynamic"

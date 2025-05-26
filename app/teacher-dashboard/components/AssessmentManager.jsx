@@ -44,7 +44,7 @@ import {
   TabPanel,
   Code,
 } from "@chakra-ui/react"
-import { FaPlus, FaEdit, FaTrash, FaSync, FaBug } from "react-icons/fa"
+import { FaPlus, FaEdit, FaTrash, FaSync, FaBug, FaTools } from "react-icons/fa"
 import AssessmentDebugger from "./AssessmentDebugger"
 
 const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
@@ -57,6 +57,7 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
     students: false,
     assessments: false,
     submit: false,
+    fixIds: false,
   })
   const [error, setError] = useState(null)
   const [formData, setFormData] = useState({
@@ -68,12 +69,14 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
   })
   const [filteredSubjects, setFilteredSubjects] = useState([])
   const [showDebugger, setShowDebugger] = useState(false)
+  const [fixResults, setFixResults] = useState(null)
   const [debugInfo, setDebugInfo] = useState({
     apiResponse: null,
     requestUrl: "",
     submissionData: null,
     submissionResults: null,
     lastError: null,
+    students: null,
   })
   const toast = useToast()
 
@@ -126,6 +129,13 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
 
       const data = await response.json()
       console.log(`[AssessmentManager] Fetched ${data.students?.length || 0} students`)
+
+      // Store students in debug info
+      setDebugInfo((prev) => ({
+        ...prev,
+        students: data.students,
+      }))
+
       setStudents(data.students || [])
 
       // Initialize student assessments
@@ -134,6 +144,7 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
         studentAssessments: (data.students || []).map((student) => ({
           studentId: student._id,
           name: student.name,
+          email: student.email, // Include email for better matching
           score: "",
           comment: "",
         })),
@@ -209,6 +220,152 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
     setFormData((prev) => ({ ...prev, studentAssessments: newStudentAssessments }))
   }
 
+  // Validate and map students to ensure correct IDs
+  const validateAndMapStudents = (assessments) => {
+    // Check if we have student data
+    if (!students || students.length === 0) {
+      console.warn("[AssessmentManager] No students data available for validation")
+      return {
+        assessments,
+        warnings: ["No student data available for validation"],
+      }
+    }
+
+    // Create maps for quick lookup
+    const studentIdMap = {}
+    const studentNameMap = {}
+    const studentEmailMap = {}
+    const warnings = []
+
+    students.forEach((student) => {
+      // Map by ID
+      studentIdMap[student._id] = student
+
+      // Map by name (case insensitive)
+      if (student.name) {
+        studentNameMap[student.name.toLowerCase()] = student
+      }
+
+      // Map by email (case insensitive)
+      if (student.email) {
+        studentEmailMap[student.email.toLowerCase()] = student
+      }
+
+      // Map by first+last name combinations if available
+      if (student.firstName && student.lastName) {
+        const fullName = `${student.firstName} ${student.lastName}`.toLowerCase()
+        studentNameMap[fullName] = student
+      }
+    })
+
+    // Validate and fix each assessment
+    const validatedAssessments = assessments.map((assessment) => {
+      // Check if the student ID exists in our map
+      const studentExists = !!studentIdMap[assessment.studentId]
+
+      if (!studentExists) {
+        // Try to find by name
+        if (assessment.name) {
+          const nameLower = assessment.name.toLowerCase()
+          const matchedStudent = studentNameMap[nameLower]
+
+          if (matchedStudent) {
+            console.log(
+              `[AssessmentManager] Fixing student ID for ${assessment.name}: ${assessment.studentId} -> ${matchedStudent._id}`,
+            )
+            warnings.push(`Fixed student ID for ${assessment.name}`)
+            return {
+              ...assessment,
+              studentId: matchedStudent._id,
+            }
+          } else {
+            warnings.push(`Could not find student match for name: ${assessment.name}`)
+          }
+        }
+
+        // Try to find by email
+        if (assessment.email) {
+          const emailLower = assessment.email.toLowerCase()
+          const matchedStudent = studentEmailMap[emailLower]
+
+          if (matchedStudent) {
+            console.log(
+              `[AssessmentManager] Fixing student ID for ${assessment.email}: ${assessment.studentId} -> ${matchedStudent._id}`,
+            )
+            warnings.push(`Fixed student ID for ${assessment.email}`)
+            return {
+              ...assessment,
+              studentId: matchedStudent._id,
+            }
+          } else {
+            warnings.push(`Could not find student match for email: ${assessment.email}`)
+          }
+        } else {
+          warnings.push(`Invalid student ID: ${assessment.studentId} and no name/email provided`)
+        }
+      }
+
+      return assessment
+    })
+
+    return {
+      assessments: validatedAssessments,
+      warnings,
+    }
+  }
+
+  // Fix student IDs in existing assessments
+  const fixStudentIds = async () => {
+    setLoading((prev) => ({ ...prev, fixIds: true }))
+    setError(null)
+    setFixResults(null)
+
+    try {
+      const response = await fetch("/api/fix-student-assessments", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to fix student IDs")
+      }
+
+      const data = await response.json()
+      console.log("[AssessmentManager] Fix student IDs result:", data)
+
+      setFixResults(data.results)
+
+      toast({
+        title: "Student IDs Fixed",
+        description: data.message,
+        status: "success",
+        duration: 5000,
+        isClosable: true,
+      })
+
+      // Refresh assessments after fixing
+      if (selectedSubject && selectedClass) {
+        fetchAssessments({ subjectId: selectedSubject, classId: selectedClass })
+      }
+    } catch (error) {
+      console.error("[AssessmentManager] Error fixing student IDs:", error)
+      setError(`Failed to fix student IDs: ${error.message}`)
+      toast({
+        title: "Error",
+        description: `Failed to fix student IDs: ${error.message}`,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      })
+    } finally {
+      setLoading((prev) => ({ ...prev, fixIds: false }))
+    }
+  }
+
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -244,6 +401,25 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
         return
       }
 
+      // Validate and map student IDs before submission
+      const { assessments: validatedAssessments, warnings } = validateAndMapStudents(validAssessments)
+
+      // Show warnings if any
+      if (warnings.length > 0) {
+        console.warn("[AssessmentManager] Student validation warnings:", warnings)
+
+        // Show toast with warnings if there are any
+        if (warnings.some((w) => w.includes("Could not find") || w.includes("Invalid student ID"))) {
+          toast({
+            title: "Student ID Warnings",
+            description: "Some students could not be properly identified. Check the console for details.",
+            status: "warning",
+            duration: 5000,
+            isClosable: true,
+          })
+        }
+      }
+
       // Create assessments using the student-assessments API endpoint
       console.log("[AssessmentManager] Creating assessments using student-assessments API")
 
@@ -254,8 +430,10 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
         maxScore: Number(formData.maxScore),
         weight: Number(formData.weight),
         date: formData.date,
-        assessments: validAssessments.map((assessment) => ({
+        assessments: validatedAssessments.map((assessment) => ({
           studentId: assessment.studentId,
+          name: assessment.name, // Include name for backup matching
+          email: assessment.email, // Include email for backup matching
           score: Number(assessment.score),
           comment: assessment.comment || "",
         })),
@@ -271,9 +449,13 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
         },
       }))
 
+      // Try the submission with credentials
       const bulkResponse = await fetch("/api/student-assessments", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache",
+        },
         body: JSON.stringify(bulkPayload),
         credentials: "include", // Ensure cookies are sent with the request
       })
@@ -305,10 +487,10 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
 
         toast({
           title: "Assessments submitted",
-          description: `Successfully submitted ${bulkData.results.success.length} assessments. ${
-            bulkData.results.failed.length > 0 ? `Failed: ${bulkData.results.failed.length}` : ""
+          description: `Successfully submitted ${bulkData.results?.success?.length || 0} assessments. ${
+            bulkData.results?.failed?.length > 0 ? `Failed: ${bulkData.results.failed.length}` : ""
           }`,
-          status: bulkData.results.failed.length === 0 ? "success" : "warning",
+          status: bulkData.results?.failed?.length === 0 ? "success" : "warning",
           duration: 5000,
           isClosable: true,
         })
@@ -322,6 +504,7 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
           studentAssessments: students.map((student) => ({
             studentId: student._id,
             name: student.name,
+            email: student.email,
             score: "",
             comment: "",
           })),
@@ -351,6 +534,68 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
     } finally {
       setLoading((prev) => ({ ...prev, submit: false }))
     }
+  }
+
+  // Enhance the student table rendering in the modal
+  const renderStudentTable = () => {
+    return (
+      <Table variant="simple" size="sm">
+        <Thead>
+          <Tr>
+            <Th>Student</Th>
+            <Th>Student ID</Th>
+            <Th>Score</Th>
+            <Th>Comment</Th>
+          </Tr>
+        </Thead>
+        <Tbody>
+          {formData.studentAssessments.map((student, index) => (
+            <Tr key={student.studentId}>
+              <Td>
+                <Flex direction="column">
+                  <Text fontWeight="medium">{student.name}</Text>
+                  {student.email && (
+                    <Text fontSize="xs" color="gray.500">
+                      {student.email}
+                    </Text>
+                  )}
+                </Flex>
+              </Td>
+              <Td>
+                <Tooltip label={`Student ID: ${student.studentId}`}>
+                  <Text fontSize="xs" color="gray.500" noOfLines={1}>
+                    {student.studentId.substring(0, 8)}...
+                  </Text>
+                </Tooltip>
+              </Td>
+              <Td>
+                <NumberInput
+                  min={0}
+                  max={formData.maxScore}
+                  value={student.score}
+                  onChange={(value) => handleStudentAssessmentChange(index, "score", value)}
+                  size="sm"
+                >
+                  <NumberInputField />
+                  <NumberInputStepper>
+                    <NumberIncrementStepper />
+                    <NumberDecrementStepper />
+                  </NumberInputStepper>
+                </NumberInput>
+              </Td>
+              <Td>
+                <Input
+                  size="sm"
+                  placeholder="Optional comment"
+                  value={student.comment}
+                  onChange={(e) => handleStudentAssessmentChange(index, "comment", e.target.value)}
+                />
+              </Td>
+            </Tr>
+          ))}
+        </Tbody>
+      </Table>
+    )
   }
 
   // Get student name by ID
@@ -493,6 +738,16 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
           </Button>
 
           <Button
+            leftIcon={<FaTools />}
+            colorScheme="orange"
+            onClick={fixStudentIds}
+            isLoading={loading.fixIds}
+            title="Fix student IDs in assessments"
+          >
+            Fix IDs
+          </Button>
+
+          <Button
             leftIcon={<FaBug />}
             colorScheme={showDebugger ? "red" : "gray"}
             onClick={() => setShowDebugger(!showDebugger)}
@@ -507,6 +762,31 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
         <Alert status="error" mb={6}>
           <AlertIcon />
           {error}
+        </Alert>
+      )}
+
+      {fixResults && (
+        <Alert status="success" mb={6}>
+          <AlertIcon />
+          <Box>
+            <Text fontWeight="bold">Student ID Fix Results:</Text>
+            <Text>Total assessments: {fixResults.total}</Text>
+            <Text>Fixed: {fixResults.fixed}</Text>
+            <Text>Already correct: {fixResults.alreadyCorrect}</Text>
+            <Text>Failed: {fixResults.failed}</Text>
+            {fixResults.details && fixResults.details.length > 0 && (
+              <Box mt={2}>
+                <Text fontWeight="bold">Fixed assessments:</Text>
+                <Box maxH="200px" overflowY="auto" mt={2}>
+                  {fixResults.details.map((detail, index) => (
+                    <Text key={index} fontSize="sm">
+                      • {detail.title}: {detail.studentName} ({detail.oldStudentId} → {detail.newStudentId})
+                    </Text>
+                  ))}
+                </Box>
+              </Box>
+            )}
+          </Box>
         </Alert>
       )}
 
@@ -657,6 +937,25 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
               </Code>
 
               <Text fontWeight="bold" mb={2}>
+                Students in Class:
+              </Text>
+              <Box maxH="200px" overflowY="auto" mb={4}>
+                <Code p={2} display="block" whiteSpace="pre" overflowX="auto">
+                  {debugInfo.students
+                    ? JSON.stringify(
+                        debugInfo.students.map((s) => ({
+                          id: s._id,
+                          name: s.name,
+                          email: s.email,
+                        })),
+                        null,
+                        2,
+                      )
+                    : "No students loaded"}
+                </Code>
+              </Box>
+
+              <Text fontWeight="bold" mb={2}>
                 API Response:
               </Text>
               <Box maxH="400px" overflowY="auto">
@@ -778,45 +1077,7 @@ const AssessmentManager = ({ classes, subjects, fetchSubjects }) => {
                 Student Assessments
               </Heading>
 
-              <Table variant="simple" size="sm">
-                <Thead>
-                  <Tr>
-                    <Th>Student</Th>
-                    <Th>Score</Th>
-                    <Th>Comment</Th>
-                  </Tr>
-                </Thead>
-                <Tbody>
-                  {formData.studentAssessments.map((student, index) => (
-                    <Tr key={student.studentId}>
-                      <Td>{student.name}</Td>
-                      <Td>
-                        <NumberInput
-                          min={0}
-                          max={formData.maxScore}
-                          value={student.score}
-                          onChange={(value) => handleStudentAssessmentChange(index, "score", value)}
-                          size="sm"
-                        >
-                          <NumberInputField />
-                          <NumberInputStepper>
-                            <NumberIncrementStepper />
-                            <NumberDecrementStepper />
-                          </NumberInputStepper>
-                        </NumberInput>
-                      </Td>
-                      <Td>
-                        <Input
-                          size="sm"
-                          placeholder="Optional comment"
-                          value={student.comment}
-                          onChange={(e) => handleStudentAssessmentChange(index, "comment", e.target.value)}
-                        />
-                      </Td>
-                    </Tr>
-                  ))}
-                </Tbody>
-              </Table>
+              {renderStudentTable()}
             </ModalBody>
 
             <ModalFooter>

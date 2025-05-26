@@ -8,10 +8,10 @@ const GradesDisplay = ({ subjects = [], grades = [], loading = false, user }) =>
   const [averages, setAverages] = useState({})
   const [processedGrades, setProcessedGrades] = useState([])
 
-  // Process grades when subjects or grades change
+  // Update the useEffect that processes grades to strictly filter by student ID
   useEffect(() => {
-    if (subjects.length === 0 || grades.length === 0) {
-      console.log("[GradesDisplay] No subjects or grades to process")
+    if (subjects.length === 0) {
+      console.log("[GradesDisplay] No subjects to process")
       setSubjectGrades({})
       setAverages({})
       setProcessedGrades([])
@@ -19,6 +19,7 @@ const GradesDisplay = ({ subjects = [], grades = [], loading = false, user }) =>
     }
 
     console.log(`[GradesDisplay] Processing ${grades.length} grades for ${subjects.length} subjects`)
+    console.log(`[GradesDisplay] Current user ID: ${user?.id}`)
 
     // Group grades by subject
     const gradesBySubject = {}
@@ -34,7 +35,7 @@ const GradesDisplay = ({ subjects = [], grades = [], loading = false, user }) =>
     const processedIds = new Set()
     const uniqueGrades = []
 
-    // Add grades to their respective subjects
+    // CRITICAL FIX: Only process grades that match the current user's student ID
     grades.forEach((grade) => {
       // Skip if we've already processed this grade
       if (processedIds.has(grade._id)) {
@@ -42,9 +43,17 @@ const GradesDisplay = ({ subjects = [], grades = [], loading = false, user }) =>
         return
       }
 
-      // Skip grades that don't have a valid _id (likely sample data)
+      // Skip grades that don't have a valid _id
       if (!grade._id) {
         console.log(`[GradesDisplay] Skipping grade without ID: ${grade.title}`)
+        return
+      }
+
+      // CRITICAL FIX: Verify this grade belongs to the current student
+      const gradeStudentId = String(grade.studentId)
+      if (user && user.id && gradeStudentId !== user.id) {
+        console.log(`[GradesDisplay] Skipping grade not belonging to current student: ${grade.title} (${grade._id})`)
+        console.log(`[GradesDisplay] Grade student ID: ${gradeStudentId}, Current user ID: ${user.id}`)
         return
       }
 
@@ -75,7 +84,8 @@ const GradesDisplay = ({ subjects = [], grades = [], loading = false, user }) =>
         // Mark as processed
         processedIds.add(grade._id)
       } else {
-        console.log(`[GradesDisplay] No matching subject found for grade: ${grade.title}`)
+        console.log(`[GradesDisplay] No matching subject found for grade: ${grade.title} (${grade.subjectId})`)
+        console.log(`[GradesDisplay] Available subjects: ${subjects.map((s) => `${s.name} (${s._id})`).join(", ")}`)
       }
     })
 
@@ -138,8 +148,13 @@ const GradesDisplay = ({ subjects = [], grades = [], loading = false, user }) =>
 
   // Format date
   const formatDate = (dateString) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString()
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString()
+    } catch (error) {
+      console.error(`[GradesDisplay] Error formatting date: ${dateString}`, error)
+      return "Invalid date"
+    }
   }
 
   // Format percentage with one decimal place
@@ -253,6 +268,35 @@ const GradesDisplay = ({ subjects = [], grades = [], loading = false, user }) =>
           </Tbody>
         </Table>
       </Box>
+      {process.env.NODE_ENV === "development" && (
+        <Box mt={8} p={4} borderWidth="1px" borderRadius="md">
+          <Heading size="sm" mb={2}>
+            Debug Information
+          </Heading>
+          <Text fontSize="sm">Data Source: student-assessments collection</Text>
+          <Text fontSize="sm">Total Grades: {grades.length}</Text>
+          <Text fontSize="sm">Processed Grades: {processedGrades.length}</Text>
+          <Text fontSize="sm">
+            First Grade Sample:{" "}
+            {grades.length > 0
+              ? JSON.stringify(
+                  {
+                    id: grades[0]._id,
+                    title: grades[0].title,
+                    score: grades[0].score,
+                    maxScore: grades[0].maxScore,
+                    date: grades[0].date,
+                  },
+                  null,
+                  2,
+                )
+              : "No grades"}
+          </Text>
+          <Text fontSize="sm" mt={2}>
+            Subject IDs: {subjects.map((s) => `${s.name}: ${s._id}`).join(", ")}
+          </Text>
+        </Box>
+      )}
     </Box>
   )
 }

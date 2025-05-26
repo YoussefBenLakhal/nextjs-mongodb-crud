@@ -1,43 +1,30 @@
-import { NextResponse } from 'next/server';
-import { registerUser } from '../../../../lib/auth-utils';
+import { NextResponse } from "next/server"
+import { authenticateUser } from "../../../../lib/auth-utils"
 
 export async function POST(request) {
   try {
-    const { email, password } = await request.json();
+    const userData = await request.json()
 
-    // Basic validation
-    if (!email || !password) {
-      return NextResponse.json(
-        { error: "Email and password are required" },
-        { status: 400 }
-      );
+    console.log("[AUTH] Registration attempt for:", userData.email)
+
+    if (!userData.email || !userData.password) {
+      return NextResponse.json({ error: "Email and password are required" }, { status: 400 })
     }
 
-    // Validate password length
-    if (password.length < 8) {
-      return NextResponse.json(
-        { error: "Password must be at least 8 characters" },
-        { status: 400 }
-      );
+    if (!userData.role || !["student", "teacher"].includes(userData.role)) {
+      return NextResponse.json({ error: "Valid role is required" }, { status: 400 })
     }
 
-    // Create user in database
-    const userId = await registerUser(email, password);
-    
-    return NextResponse.json(
-      { 
-        success: true,
-        userId,
-        message: "Registration successful" 
-      },
-      { status: 201 }
-    );
+    const result = await createUser(userData)
 
+    console.log("[AUTH] Registration successful for:", userData.email)
+
+    return NextResponse.json({
+      message: "Registration successful",
+      user: result,
+    })
   } catch (error) {
-    console.error('Registration error:', error);
-    return NextResponse.json(
-      { error: error.message },
-      { status: error.message.includes('already exists') ? 409 : 500 }
-    );
+    console.error("[AUTH] Registration error:", error.message)
+    return NextResponse.json({ error: error.message }, { status: 400 })
   }
 }

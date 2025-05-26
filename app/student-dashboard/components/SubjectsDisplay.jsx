@@ -1,175 +1,51 @@
 "use client"
-import {
-  Box,
-  Text,
-  SimpleGrid,
-  Card,
-  CardHeader,
-  CardBody,
-  Heading,
-  Badge,
-  Flex,
-  Progress,
-  Spinner,
-  Alert,
-  AlertIcon,
-  Button,
-} from "@chakra-ui/react"
-import { FaSync } from "react-icons/fa"
-import { useEffect } from "react"
+import { Box, Text, VStack, HStack, Badge, Card, CardBody } from "@chakra-ui/react"
+import { FaBook, FaGraduationCap, FaClock } from "react-icons/fa"
 
-const SubjectsDisplay = ({ subjects, grades, loading }) => {
-  // Add this debugging code near the top of the component
-  useEffect(() => {
-    if (subjects && subjects.length > 0) {
-      console.log(
-        "[SubjectsDisplay] Subjects:",
-        subjects.map((s) => ({
-          id: s._id,
-          name: s.name,
-        })),
-      )
-    }
-
-    if (grades && grades.length > 0) {
-      console.log(
-        "[SubjectsDisplay] Grades:",
-        grades.map((g) => ({
-          id: g._id,
-          subjectId: g.subjectId,
-          title: g.title,
-        })),
-      )
-    }
-  }, [subjects, grades])
-
-  // Also modify the getSubjectGrades function to handle different ID formats
-  const getSubjectGrades = (subjectId) => {
-    // Convert the subjectId to string for consistent comparison
-    const subjectIdStr = String(subjectId)
-
-    return grades.filter((grade) => {
-      // Convert grade's subjectId to string for comparison
-      const gradeSubjectId = String(grade.subjectId)
-
-      // Check if IDs match directly or after removing any ObjectId wrapper
-      return (
-        gradeSubjectId === subjectIdStr ||
-        gradeSubjectId.replace(/^ObjectId$$['"](.+)['"]$$$/, "$1") === subjectIdStr ||
-        subjectIdStr.replace(/^ObjectId$$['"](.+)['"]$$$/, "$1") === gradeSubjectId
-      )
-    })
-  }
-  // Calculate average grade for a subject
-  const calculateSubjectAverage = (subjectId) => {
-    const subjectGrades = getSubjectGrades(subjectId)
-
-    if (subjectGrades.length === 0) return null
-
-    const weightedSum = subjectGrades.reduce((sum, grade) => {
-      return sum + (grade.score / grade.maxScore) * grade.weight
-    }, 0)
-
-    const totalWeight = subjectGrades.reduce((sum, grade) => sum + grade.weight, 0)
-
-    return (weightedSum / totalWeight) * 100
-  }
-
-  // Get color based on grade percentage
-  const getGradeColor = (percentage) => {
-    if (percentage >= 90) return "green.500"
-    if (percentage >= 80) return "teal.500"
-    if (percentage >= 70) return "blue.500"
-    if (percentage >= 60) return "yellow.500"
-    return "red.500"
-  }
-
-  // Get letter grade
-  const getLetterGrade = (percentage) => {
-    if (percentage >= 90) return "A"
-    if (percentage >= 80) return "B"
-    if (percentage >= 70) return "C"
-    if (percentage >= 60) return "D"
-    return "F"
-  }
-
-  if (loading) {
-    return (
-      <Flex justify="center" align="center" minH="200px">
-        <Spinner size="xl" color="blue.500" />
-      </Flex>
-    )
-  }
-
+export default function SubjectsDisplay({ subjects = [] }) {
   if (!subjects || subjects.length === 0) {
     return (
-      <Box textAlign="center" p={8}>
-        <Alert status="warning" mb={4}>
-          <AlertIcon />
-          <Text>
-            No subjects available. This could be due to an API error or you may not be enrolled in any subjects yet.
-          </Text>
-          <Button ml="auto" size="sm" leftIcon={<FaSync />} onClick={() => window.location.reload()}>
-            Retry
-          </Button>
-        </Alert>
-      </Box>
+      <Card>
+        <CardBody>
+          <Text color="gray.500">No subjects enrolled</Text>
+        </CardBody>
+      </Card>
     )
   }
 
   return (
-    <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
-      {subjects.map((subject) => (
-        <Card key={subject._id} borderWidth="1px" borderRadius="lg" overflow="hidden">
-          <CardHeader bg="purple.50" py={4}>
-            <Heading size="md">{subject.name}</Heading>
-            <Badge colorScheme="purple" mt={2}>
-              {subject.code}
-            </Badge>
-          </CardHeader>
+    <VStack spacing={4} align="stretch">
+      {subjects.map((subject, index) => (
+        <Card key={index} variant="outline">
           <CardBody>
-            <Text noOfLines={3} mb={4}>
-              {subject.description || "No description provided."}
-            </Text>
-
-            <Heading size="xs" mb={2}>
-              Performance
-            </Heading>
-            {(() => {
-              const average = calculateSubjectAverage(subject._id)
-              return average === null ? (
-                <Text fontSize="sm">No grades yet</Text>
-              ) : (
-                <>
-                  <Flex justify="space-between" align="center" mb={2}>
-                    <Text fontWeight="bold" color={getGradeColor(average)}>
-                      {average.toFixed(1)}%
-                    </Text>
-                    <Badge colorScheme={average >= 60 ? "green" : "red"}>{getLetterGrade(average)}</Badge>
-                  </Flex>
-                  <Progress
-                    value={average}
-                    colorScheme={
-                      average >= 90
-                        ? "green"
-                        : average >= 80
-                          ? "teal"
-                          : average >= 70
-                            ? "blue"
-                            : average >= 60
-                              ? "yellow"
-                              : "red"
-                    }
-                    borderRadius="md"
-                  />
-                </>
-              )
-            })()}
+            <HStack justify="space-between">
+              <HStack spacing={3}>
+                <Box color="blue.500">
+                  <FaBook size={20} />
+                </Box>
+                <VStack align="start" spacing={1}>
+                  <Text fontWeight="bold">{subject.name}</Text>
+                  <HStack spacing={2}>
+                    <Badge colorScheme="blue" variant="subtle">
+                      <HStack spacing={1}>
+                        <FaGraduationCap size={12} />
+                        <Text fontSize="xs">{subject.teacher}</Text>
+                      </HStack>
+                    </Badge>
+                    <Badge colorScheme="green" variant="subtle">
+                      <HStack spacing={1}>
+                        <FaClock size={12} />
+                        <Text fontSize="xs">{subject.schedule}</Text>
+                      </HStack>
+                    </Badge>
+                  </HStack>
+                </VStack>
+              </HStack>
+              <Badge colorScheme="purple">{subject.credits} Credits</Badge>
+            </HStack>
           </CardBody>
         </Card>
       ))}
-    </SimpleGrid>
+    </VStack>
   )
 }
-
-export default SubjectsDisplay

@@ -1,19 +1,20 @@
-import { NextResponse } from "next/server"
-import { connectToDatabase } from "../../../lib/mongodb1"
-import { ObjectId } from "mongodb"
-import { getServerSession } from "next-auth/next"
-import { authOptions } from "@/app/api/auth/[...nextauth]/route"
 
+
+import { NextResponse } from "next/server";
+import { connectToDatabase } from "../../../../lib/mongodb";
+import { ObjectId } from "mongodb";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from  "../../../../app/api/auth/[...nextauth]/route";
 // Get a specific class
 export async function GET(request, { params }) {
   try {
     console.log(`[API] GET /api/classes/${params.id} - Fetching class`)
 
     // Connect to the database
-    const { db, isConnected, error } = await connectToDatabase()
+    const { db, isConnected } = await connectToDatabase()
 
     if (!isConnected) {
-      console.error("[API] Database connection failed:", error)
+      console.error("[API] Database connection failed")
       return NextResponse.json({ error: "Failed to connect to the database" }, { status: 500 })
     }
 
@@ -56,10 +57,10 @@ export async function PUT(request, { params }) {
     }
 
     // Connect to the database
-    const { db, isConnected, error } = await connectToDatabase()
+    const { db, isConnected } = await connectToDatabase()
 
     if (!isConnected) {
-      console.error("[API] Database connection failed:", error)
+      console.error("[API] Database connection failed")
       return NextResponse.json({ error: "Failed to connect to the database" }, { status: 500 })
     }
 
@@ -166,10 +167,10 @@ export async function DELETE(request, { params }) {
     }
 
     // Connect to the database
-    const { db, isConnected, error } = await connectToDatabase()
+    const { db, isConnected } = await connectToDatabase()
 
     if (!isConnected) {
-      console.error("[API] Database connection failed:", error)
+      console.error("[API] Database connection failed")
       return NextResponse.json({ error: "Failed to connect to the database" }, { status: 500 })
     }
 

@@ -32,6 +32,8 @@ import {
   Button,
   Alert,
   AlertIcon,
+  AlertTitle,
+  AlertDescription,
   Code,
   ButtonGroup,
 } from "@chakra-ui/react"
@@ -44,6 +46,7 @@ import {
   FaSignOutAlt,
   FaChevronDown,
   FaSync,
+  FaExclamationTriangle,
   FaBug,
   FaDatabase,
 } from "react-icons/fa"
@@ -51,15 +54,7 @@ import { useRouter } from "next/navigation"
 import GradesDisplay from "./components/GradesDisplay"
 import AttendanceDisplay from "./components/AttendanceDisplay"
 import SubjectsDisplay from "./components/SubjectsDisplay"
-
-// Hardcoded subject that matches the subjectId in the grades
-const FALLBACK_SUBJECT = {
-  _id: "682a2236895fe5d79b54dfc1",
-  name: "BDD",
-  description: "Base de données",
-  teacher: "6823d14b7b92d2877e872449",
-  createdAt: "2025-05-18T00:00:00.000Z",
-}
+import ConnectionStatus from "./components/ConnectionStatus"
 
 export default function ClientDashboard({ user }) {
   const [classes, setClasses] = useState([])
@@ -208,10 +203,10 @@ export default function ClientDashboard({ user }) {
         // Add cache-busting parameter
         const timestamp = Date.now()
 
-        // Try multiple endpoints for subjects
+        // FIXED: Use the correct API endpoint path - /api/student/subjects instead of /api/subjects
         const apiEndpoints = [
-          `/api/subjects?t=${timestamp}`, // Primary endpoint
-          `/api/student/subjects?t=${timestamp}`, // Student-specific subjects
+          `/api/student/subjects?t=${timestamp}`, // Primary endpoint
+          `/api/subjects?t=${timestamp}`, // Fallback endpoint
           `/api/seed-subjects?t=${timestamp}`, // Seed data endpoint
         ]
 
@@ -289,16 +284,6 @@ export default function ClientDashboard({ user }) {
 
         if (subjectsData && subjectsData.length > 0) {
           // We got data from one of the endpoints
-
-          // Check if the subject with ID 682a2236895fe5d79b54dfc1 exists in the fetched subjects
-          const hasMatchingSubject = subjectsData.some((subject) => String(subject._id) === "682a2236895fe5d79b54dfc1")
-
-          // If not, add our fallback subject to ensure grades match
-          if (!hasMatchingSubject) {
-            console.log("[ClientDashboard] Adding fallback subject to match grades")
-            subjectsData.push(FALLBACK_SUBJECT)
-          }
-
           setSubjects(subjectsData)
           setError(null) // Clear any previous errors
 
@@ -313,22 +298,24 @@ export default function ClientDashboard({ user }) {
           }
         } else {
           // All endpoints failed or returned no valid subjects
-          console.log("[ClientDashboard] No valid subjects found. Using fallback subject.")
+          console.error("[ClientDashboard] No valid subjects found. Using empty subjects array.")
 
-          // Use fallback subject to ensure grades have a matching subject
-          setSubjects([FALLBACK_SUBJECT])
+          // Empty array - NO HARDCODED SUBJECTS
+          setSubjects([])
 
           if (errorMessages.length > 0) {
+            setError("Failed to load subjects. No subjects available.")
+
             setApiStatus({
               missingEndpoints: true,
-              message: "API endpoints failed. Using fallback subject data.",
+              message: "API endpoints failed or returned no valid subjects.",
             })
 
             if (showToast) {
               toast({
-                title: "Using fallback subjects",
-                description: "Using fallback subject data due to API issues.",
-                status: "info",
+                title: "Error loading subjects",
+                description: "Failed to load subjects. Please try again later.",
+                status: "error",
                 duration: 5000,
                 isClosable: true,
               })
@@ -340,20 +327,15 @@ export default function ClientDashboard({ user }) {
       } catch (error) {
         console.error("[ClientDashboard] Error fetching subjects:", error)
 
-        // Use fallback subject to ensure grades have a matching subject
-        console.log("[ClientDashboard] Using fallback subject due to error")
-        setSubjects([FALLBACK_SUBJECT])
-
-        setApiStatus({
-          missingEndpoints: true,
-          message: "Failed to load subjects. Using fallback data.",
-        })
+        // Empty array - NO HARDCODED SUBJECTS
+        setSubjects([])
+        setError(`Failed to load subjects. No subjects available.`)
 
         if (showToast) {
           toast({
-            title: "Using fallback subjects",
-            description: "Using fallback subject data due to error.",
-            status: "info",
+            title: "Error loading subjects",
+            description: error.message,
+            status: "error",
             duration: 5000,
             isClosable: true,
           })
@@ -365,7 +347,7 @@ export default function ClientDashboard({ user }) {
     [toast],
   )
 
-  // Fetch grades from the API with fallback
+  // Fetch grades - Memoized to prevent recreation
   const fetchGrades = useCallback(
     async (showToast = false) => {
       try {
@@ -375,129 +357,50 @@ export default function ClientDashboard({ user }) {
         // Add cache-busting parameter
         const timestamp = Date.now()
 
-        // Try multiple endpoints for grades
-        const apiEndpoints = [
-          `/api/student-assessments?t=${timestamp}`, // Primary endpoint using the new API
-          `/api/student-grades?t=${timestamp}`, // Fallback endpoint
-        ]
+        const response = await fetch(`/api/student-assessments?t=${timestamp}`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            Pragma: "no-cache",
+            Expires: "0",
+          },
+          cache: "no-store",
+          credentials: "include", // Important for auth
+        })
 
-        let gradesData = null
-        const errorMessages = []
-
-        // Try each endpoint until one works
-        for (const endpoint of apiEndpoints) {
-          try {
-            console.log(`[ClientDashboard] Trying endpoint: ${endpoint}`)
-
-            const response = await fetch(endpoint, {
-              method: "GET",
-              headers: {
-                "Content-Type": "application/json",
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-              },
-              cache: "no-store",
-              credentials: "include", // Important for auth
-            })
-
-            console.log(`[ClientDashboard] ${endpoint} response status: ${response.status}`)
-
-            if (!response.ok) {
-              const errorMsg = `${endpoint} returned status ${response.status}`
-              console.error(`[ClientDashboard] ${errorMsg}`)
-              errorMessages.push(errorMsg)
-              continue // Try next endpoint
-            }
-
-            const data = await response.json()
-            console.log(`[ClientDashboard] ${endpoint} returned data:`, data)
-
-            // Check if we have assessments or grades in the response
-            const assessments = data.assessments || []
-
-            if (assessments.length > 0) {
-              console.log(`[ClientDashboard] Successfully fetched ${assessments.length} grades from ${endpoint}`)
-              gradesData = assessments
-
-              // Store successful response for debugging
-              setDebugInfo((prev) => ({
-                ...prev,
-                apiResponses: {
-                  ...prev.apiResponses,
-                  grades: {
-                    endpoint,
-                    data,
-                    source: data.source || "api",
-                  },
-                },
-              }))
-
-              break // Exit the loop if we got valid data
-            } else {
-              errorMessages.push(`${endpoint} returned no grades`)
-            }
-          } catch (endpointError) {
-            console.error(`[ClientDashboard] Error with ${endpoint}:`, endpointError)
-            errorMessages.push(`${endpoint}: ${endpointError.message}`)
-          }
+        if (!response.ok) {
+          throw new Error("Failed to fetch grades")
         }
 
-        // Store errors for debugging
-        setDebugInfo((prev) => ({
-          ...prev,
-          errors: {
-            ...prev.errors,
-            grades: errorMessages,
-          },
-        }))
+        const data = await response.json()
+        console.log(`[ClientDashboard] Fetched ${data.grades?.length || 0} grades`)
+        setGrades(data.grades || [])
 
-        if (gradesData && gradesData.length > 0) {
-          // We got data from one of the endpoints
-          setGrades(gradesData)
-          setError(null)
-
-          if (showToast) {
-            toast({
-              title: "Grades loaded",
-              description: `Successfully loaded ${gradesData.length} grades.`,
-              status: "success",
-              duration: 3000,
-              isClosable: true,
-            })
-          }
-        } else {
-          // All endpoints failed or returned no grades
-          console.log("[ClientDashboard] No grades found.")
-          setGrades([])
-
-          if (showToast) {
-            toast({
-              title: "No grades found",
-              description: "No grades have been entered for you yet.",
-              status: "info",
-              duration: 5000,
-              isClosable: true,
-            })
-          }
+        if (showToast) {
+          toast({
+            title: "Grades loaded",
+            description: `Successfully loaded ${data.grades?.length || 0} grades.`,
+            status: "success",
+            duration: 3000,
+            isClosable: true,
+          })
         }
       } catch (error) {
         console.error("[ClientDashboard] Error fetching grades:", error)
 
-        // Store error for debugging
-        setDebugInfo((prev) => ({
-          ...prev,
-          errors: {
-            ...prev.errors,
-            grades: error.message,
-          },
-        }))
-
-        // Set empty grades array
+        // Empty array - NO HARDCODED GRADES
         setGrades([])
+
+        setApiStatus({
+          missingEndpoints: true,
+          message: "Some API endpoints are not working. No grades available.",
+        })
 
         if (showToast) {
           toast({
             title: "Error loading grades",
-            description: "Could not load your grades. Please try again later.",
+            description: error.message,
             status: "error",
             duration: 5000,
             isClosable: true,
@@ -517,25 +420,28 @@ export default function ClientDashboard({ user }) {
         console.log("[ClientDashboard] Fetching attendance...")
         setLoading((prev) => ({ ...prev, attendance: true }))
 
-        // Try to fetch attendance from the API
-        const response = await fetch("/api/attendance", {
+        // Add cache-busting parameter
+        const timestamp = Date.now()
+
+        const response = await fetch(`/api/student/attendance?t=${timestamp}`, {
           method: "GET",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include"
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            Pragma: "no-cache",
+            Expires: "0",
+          },
+          cache: "no-store",
+          credentials: "include", // Important for auth
         })
 
         if (!response.ok) {
-          throw new Error(`Attendance API returned status ${response.status}`)
+          throw new Error("Failed to fetch attendance")
         }
 
         const data = await response.json()
-        console.log("[ClientDashboard] Attendance API response:", data)
-
-        if (data.attendance && Array.isArray(data.attendance)) {
-          setAttendance(data.attendance)
-        } else {
-          setAttendance([])
-        }
+        console.log(`[ClientDashboard] Fetched ${data.attendance?.length || 0} attendance records`)
+        setAttendance(data.attendance || [])
 
         if (showToast) {
           toast({
@@ -548,14 +454,16 @@ export default function ClientDashboard({ user }) {
         }
       } catch (error) {
         console.error("[ClientDashboard] Error fetching attendance:", error)
+
+        // Empty array - NO HARDCODED ATTENDANCE
         setAttendance([])
 
         if (showToast) {
           toast({
-            title: "No attendance data",
-            description: "No attendance data available.",
-            status: "info",
-            duration: 3000,
+            title: "Error loading attendance",
+            description: error.message,
+            status: "error",
+            duration: 5000,
             isClosable: true,
           })
         }
@@ -620,8 +528,8 @@ export default function ClientDashboard({ user }) {
 
     grades.forEach((grade) => {
       const percentage = (grade.score / grade.maxScore) * 100
-      totalWeightedScore += percentage * (grade.weight || 1)
-      totalWeight += grade.weight || 1
+      totalWeightedScore += percentage * grade.weight
+      totalWeight += grade.weight
     })
 
     return totalWeight > 0 ? `${Math.round(totalWeightedScore / totalWeight)}%` : "N/A"
@@ -701,15 +609,14 @@ export default function ClientDashboard({ user }) {
         Welcome back, {user.name}! Here's an overview of your academic progress.
       </Text>
 
+      {/* Connection Status Component */}
+      <ConnectionStatus />
+
       {showDebug && (
         <Box mb={6} p={4} bg="gray.50" borderRadius="md" borderWidth="1px">
           <Heading size="sm" mb={2}>
             Debug Information
           </Heading>
-
-          <Text fontWeight="bold" mb={1}>
-            User ID: {user?.id || "Not available"}
-          </Text>
 
           {debugInfo.dbTest && (
             <>
@@ -742,6 +649,16 @@ export default function ClientDashboard({ user }) {
             </Code>
           </Box>
         </Box>
+      )}
+
+      {apiStatus.missingEndpoints && (
+        <Alert status="warning" mb={6}>
+          <AlertIcon as={FaExclamationTriangle} />
+          <Box>
+            <AlertTitle>API Development in Progress</AlertTitle>
+            <AlertDescription>{apiStatus.message}</AlertDescription>
+          </Box>
+        </Alert>
       )}
 
       {error && (
@@ -784,7 +701,7 @@ export default function ClientDashboard({ user }) {
             <TabPanels>
               {/* Grades Tab */}
               <TabPanel>
-                <GradesDisplay subjects={subjects} grades={grades} loading={loading.grades} user={user} />
+                <GradesDisplay subjects={subjects} grades={grades} loading={loading.grades} />
               </TabPanel>
 
               {/* Attendance Tab */}

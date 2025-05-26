@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { connectToDatabase } from "../../../lib/mongodb"
 import { ObjectId } from "mongodb"
-import { getSession } from "../../../lib/server-auth.js"
+import { getSession } from "../../../../lib/server-auth.js"
 
 export async function GET(request) {
   try {

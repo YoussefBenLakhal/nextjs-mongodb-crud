@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { connectToDatabase } from "../../lib/mongodb1"
+import { connectToDatabase } from "../../../lib/mongodb"
 import { ObjectId } from "mongodb"
 import { getSession } from "../../../lib/server-auth"
 

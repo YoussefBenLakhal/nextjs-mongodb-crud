@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { connectToDatabase, getConnectionStatus } from "../../../lib/mongodb"
-import { getSession } from "../../../lib/server-auth"
+import { getSession } from "../../../../lib/server-auth"
 
 export async function GET(request) {
   try {
